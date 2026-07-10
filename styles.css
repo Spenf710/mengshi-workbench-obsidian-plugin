@@ -1,0 +1,2215 @@
+/* ===== 猛士驾驶舱 — 样式表 ===== */
+
+/* 根容器 */
+.mengshi-workbench-root {
+  height: 100%;
+}
+
+.mswb-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--background-primary);
+  overflow: visible;
+}
+
+/* ===== Tab 导航 ===== */
+.mswb-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--background-modifier-border);
+  padding: 0 12px;
+  flex-shrink: 0;
+  background: var(--background-secondary);
+}
+
+.mswb-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88em;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.mswb-tab:hover {
+  color: var(--text-normal);
+}
+
+.mswb-tab.active {
+  color: var(--interactive-accent);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.mswb-tab-icon {
+  font-size: 1.1em;
+}
+
+.mswb-tab-label {
+  font-weight: 500;
+}
+
+/* ===== 面板内容区 ===== */
+.mswb-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+/* ===== 占位面板 ===== */
+.mswb-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.mswb-placeholder-icon {
+  font-size: 3em;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.mswb-placeholder h3 {
+  margin: 0 0 8px;
+  font-size: 1.1em;
+  color: var(--text-normal);
+}
+
+.mswb-placeholder p {
+  font-size: 0.85em;
+  line-height: 1.6;
+  max-width: 360px;
+}
+
+.mswb-placeholder code {
+  background: var(--background-modifier-border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* ===== 项目总览 ===== */
+.mswb-projects {
+  width: 90%;
+  margin: 0 auto;
+}
+
+/* 统计栏 */
+.mswb-proj-stats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.mswb-stat {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mswb-stat strong {
+  color: var(--text-normal);
+  font-size: 1.1em;
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+/* 排序切换 */
+.mswb-proj-sort {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.mswb-sort-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 0.78em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mswb-sort-btn:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
+.mswb-sort-btn.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* 分组 */
+.mswb-proj-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.mswb-proj-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mswb-proj-group-header h3 {
+  margin: 0;
+  font-size: 0.95em;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.mswb-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 0.7em;
+  font-weight: 700;
+  border-radius: 11px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* 卡片网格 */
+.mswb-proj-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+/* 项目卡片细化 */
+.mswb-card {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.mswb-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+/* 卡片头部 */
+.mswb-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.mswb-card-emoji {
+  font-size: 1.6em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* 图标弹出选择器 */
+.mswb-emoji-popup {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  width: 160px;
+  padding: 3px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.mswb-emoji-opt {
+  font-size: 0.85em;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  transition: background 0.1s;
+  line-height: 1;
+}
+
+.mswb-emoji-opt:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-card-title-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.mswb-card-title {
+  margin: 0 0 4px;
+  font-size: 0.9em;
+  font-weight: 700;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mswb-card-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.mswb-tag {
+  font-size: 0.65em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.mswb-tag-vehicle {
+  background: color-mix(in srgb, var(--color-blue) 20%, transparent);
+  color: var(--color-blue);
+}
+
+.mswb-tag-system {
+  background: color-mix(in srgb, var(--color-green) 20%, transparent);
+  color: var(--color-green);
+}
+
+.mswb-tag-edit-select {
+  font-size: 0.65em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 600;
+  border: 1px solid var(--interactive-accent);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  cursor: pointer;
+}
+
+/* 标签编辑弹出菜单 */
+.mswb-tag-menu {
+  position: absolute !important;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 120px;
+  margin-top: 2px;
+  padding: 3px 0;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+}
+
+.mswb-tag-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 10px;
+  font-size: 0.68em;
+  font-weight: 500;
+  color: var(--text-normal);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.mswb-tag-menu-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-tag-menu-divider {
+  height: 0;
+  margin: 2px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mswb-tag-menu-del {
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.65em;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  line-height: 1;
+  padding: 0;
+  transition: all 0.1s;
+}
+
+.mswb-tag-menu-del:hover:not(:disabled) {
+  color: #fff;
+  background: var(--color-red);
+}
+
+.mswb-tag-menu-del:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* 描述 */
+.mswb-card-desc {
+  margin: 0;
+  font-size: 0.78em;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 元信息 */
+.mswb-card-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 0.7em;
+  color: var(--text-faint);
+}
+
+.mswb-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 操作按钮 */
+.mswb-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mswb-action-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-accent);
+  font-size: 0.72em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.mswb-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-action-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  height: 28px;
+  line-height: 1;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  color: var(--text-accent);
+  font-size: 0.72em;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.mswb-action-link:hover {
+  background: var(--background-modifier-hover);
+  text-decoration: none;
+}
+
+.mswb-action-edit {
+  display: flex;
+  align-items: center;
+}
+
+.mswb-action-input {
+  height: 26px;
+  padding: 0 6px;
+  font-size: 0.72em;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 5px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  width: 200px;
+}
+
+/* ===== 日历面板 ===== */
+.mswb-calendar {
+  width: 90%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* 导航 */
+.mswb-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.mswb-cal-nav-btn {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 14px;
+  cursor: pointer;
+  font-size: 0.8em;
+  color: var(--text-normal);
+  transition: all 0.15s;
+}
+
+.mswb-cal-nav-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.mswb-cal-title {
+  font-weight: 700;
+  font-size: 1em;
+  min-width: 130px;
+  text-align: center;
+  color: var(--text-normal);
+}
+
+/* 加载 */
+.mswb-cal-loading {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 40px 0;
+  font-size: 0.85em;
+}
+
+/* 表格 */
+.mswb-cal-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mswb-cal-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  table-layout: fixed;
+}
+
+.mswb-cal-table th {
+  padding: 4px 0 6px;
+  text-align: center;
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mswb-cal-table td {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 6px 7px;
+  vertical-align: top;
+  background: var(--background-primary-alt);
+  transition: box-shadow 0.15s;
+  overflow: hidden;
+}
+
+.mswb-cal-table td:hover {
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.05);
+}
+
+/* 空格子 */
+.mswb-cal-empty {
+  border: none !important;
+  background: transparent !important;
+}
+
+/* 当天 */
+.mswb-cal-day.today {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+/* 有日志的日期 */
+.mswb-cal-day.has-log {
+  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary-alt));
+}
+
+/* 日期数字 */
+.mswb-cal-day-num {
+  font-size: 0.78em;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.mswb-cal-day.today .mswb-cal-day-num {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* 状态标签 */
+.mswb-cal-status {
+  font-size: 0.7em;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  line-height: 1;
+  vertical-align: middle;
+  margin-left: 3px;
+}
+
+/* 摘要链接 */
+.mswb-cal-link {
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 5px;
+  background: var(--background-secondary);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-accent);
+  border: 1px solid var(--background-modifier-border);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-break: break-all;
+  margin-top: 3px;
+  line-height: 1.35;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.mswb-cal-link:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  text-decoration: none;
+}
+
+/* 底部提示 */
+.mswb-cal-hint {
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.64em;
+  margin-top: 12px;
+  flex-shrink: 0;
+}
+
+/* cell 整体可点击 */
+.mswb-cal-day {
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.mswb-cal-day:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary-alt));
+}
+
+/* 选中的 cell（日期 + 图谱联动） */
+.mswb-cal-day.selected {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary-alt));
+}
+
+/* 日期行：数字 + 打开按钮 */
+.mswb-cal-day-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mswb-cal-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  width: 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.6em;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.mswb-cal-day:hover .mswb-cal-open-btn {
+  opacity: 1;
+}
+
+.mswb-cal-open-btn:hover {
+  opacity: 1 !important;
+  transform: scale(1.1);
+}
+
+/* 可点击状态 badge */
+.mswb-cal-status.clickable {
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.mswb-cal-status.clickable:hover {
+  background: var(--background-modifier-border);
+}
+
+/* 状态下拉菜单 */
+.mswb-status-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 100px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 3px;
+  margin-top: 2px;
+}
+
+.mswb-status-option {
+  padding: 4px 10px;
+  font-size: 0.72em;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.mswb-status-option:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-status-option.current {
+  background: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  font-weight: 700;
+}
+
+/* 摘要 — 纯文本展示 */
+.mswb-cal-summary {
+  font-size: 0.72em;
+  font-weight: 600;
+  padding: 2px 5px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-break: break-all;
+  margin-top: 3px;
+  line-height: 1.35;
+}
+
+/* ===== 双链图谱 ===== */
+.mswb-cal-graph {
+  flex-shrink: 0;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mswb-mini-graph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mswb-mini-graph-header {
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.mswb-mini-graph-canvas {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary-alt);
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.mswb-mini-graph-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 5px;
+  font-size: 0.62em;
+  color: var(--text-faint);
+}
+
+.mswb-graph-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mswb-graph-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ===== 待办面板 ===== */
+.mswb-todos {
+  width: 90%;
+  margin: 0 auto;
+}
+
+.mswb-todo-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mswb-todo-group {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.mswb-todo-emoji {
+  font-size: 1.1em;
+}
+
+.mswb-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mswb-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.mswb-todo-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-todo-item.done .mswb-todo-text {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.mswb-todo-check.done {
+  border-color: var(--color-green);
+  color: var(--color-green);
+}
+
+.mswb-todo-check {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--text-muted);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.7em;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.mswb-todo-check:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.mswb-todo-check.done:hover {
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+.mswb-todo-text {
+  flex: 1;
+  font-size: 0.84em;
+  font-weight: 500;
+  color: var(--text-normal);
+  cursor: pointer;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mswb-todo-text:hover {
+  color: var(--text-accent);
+}
+
+.mswb-todo-time {
+  flex-shrink: 0;
+  font-size: 0.65em;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.mswb-todo-source {
+  flex-shrink: 0;
+  font-size: 0.68em;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 1px 6px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mswb-todo-source:hover {
+  color: var(--text-accent);
+}
+
+/* ===== 快捷录入 FAB ===== */
+.mswb-fab {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  flex-shrink: 0;
+}
+
+.mswb-fab-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary-alt);
+  color: var(--text-normal);
+  font-size: 0.78em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mswb-fab-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.mswb-fab-icon {
+  font-size: 1.1em;
+}
+
+.mswb-fab-label {
+  font-weight: 500;
+}
+
+/* ===== 快捷录入 Modal ===== */
+.mswb-modal {
+  padding: 8px 0;
+  width: 520px;
+  max-width: 100%;
+}
+
+.mswb-modal h3 {
+  margin: 0 0 16px;
+  font-size: 1em;
+  color: var(--text-normal);
+  padding: 0 4px;
+}
+
+.mswb-modal .setting-item {
+  border-top: none;
+  padding: 8px 4px;
+}
+
+.mswb-modal .setting-item-info {
+  margin-right: 12px;
+}
+
+.mswb-modal .setting-item-name {
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.mswb-modal .setting-item-description {
+  font-size: 0.72em;
+  color: var(--text-faint);
+}
+
+.mswb-modal input[type='text'],
+.mswb-modal input[type='date'],
+.mswb-modal textarea,
+.mswb-modal select {
+  font-size: 0.85em;
+}
+
+/* 全宽输入行 */
+.mswb-modal-fullrow {
+  margin-bottom: 10px;
+}
+
+.mswb-modal-task-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 0.9em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.mswb-modal-task-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+/* 并排行 */
+.mswb-modal-inlinerow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: flex-end;
+}
+
+.mswb-modal-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mswb-modal-label {
+  font-size: 0.7em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.mswb-modal-input {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 0.82em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.mswb-modal-input:focus {
+  border-color: var(--interactive-accent);
+}
+
+.mswb-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mswb-modal-actions button {
+  padding: 6px 18px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 0.82em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mswb-modal-actions button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-modal-submit {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  border-color: var(--interactive-accent) !important;
+}
+
+.mswb-modal-submit:hover {
+  opacity: 0.85;
+}
+
+.mswb-modal-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 设置页删除按钮 */
+.mswb-del-btn {
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.mswb-del-btn:hover {
+  color: var(--color-red);
+}
+
+.mswb-modal-section {
+  padding: 4px 0 8px;
+}
+
+.mswb-modal-md {
+  padding: 6px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  min-height: 32px;
+  cursor: pointer;
+  font-size: 0.82em;
+}
+
+.mswb-modal-md ul {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  box-sizing: border-box;
+}
+
+.mswb-todo-check-row {
+  width: 100%;
+  padding: 2px 0;
+  line-height: 1.5;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.mswb-todo-check-row input[type="checkbox"] {
+  position: absolute;
+  left: 0;
+  top: 3px;
+}
+
+.mswb-todo-check-text {
+  margin-left: 22px;
+  word-break: break-all;
+}
+
+.mswb-modal-md:hover {
+  border-color: var(--interactive-accent);
+}
+
+.mswb-modal-md-edit textarea {
+  padding: 6px 8px;
+  font-size: 0.82em;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  resize: vertical;
+}
+
+.mswb-modal-warn {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  padding: 8px 4px;
+}
+
+/* ===== 文件列表 Modal ===== */
+.mswb-modal-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  padding: 24px 0;
+}
+
+.mswb-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.mswb-file-list li {
+  margin: 0;
+}
+
+.mswb-file-link {
+  display: block;
+  padding: 6px 10px;
+  font-size: 0.82em;
+  color: var(--text-accent);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.mswb-file-link:hover {
+  background: var(--background-modifier-hover);
+  text-decoration: none;
+}
+
+/* ===== 甘特图 ===== */
+.mswb-gantt {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.mswb-gantt-legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 0.82em;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  padding: 0 8px;
+}
+
+.mswb-gantt-today-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--color-red);
+  border-radius: 50%;
+}
+
+.mswb-gantt-filter {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.mswb-gantt-timeslicer {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: 12px;
+}
+
+.mswb-gantt-period-label {
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--text-normal);
+  padding: 0 4px;
+  min-width: 100px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.mswb-gantt-table {
+  min-width: 700px;
+  position: relative;
+}
+
+/* 月表头 */
+.mswb-gantt-header {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 4px;
+}
+
+.mswb-gantt-header-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.mswb-gantt-sub-header {
+  height: 16px;
+  border-top: 1px dashed var(--background-modifier-border);
+  opacity: 0.6;
+}
+
+.mswb-gantt-label-col {
+  width: 170px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 0.84em;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.mswb-gantt-bar-col {
+  flex: 1;
+  position: relative;
+  display: flex;
+}
+
+.mswb-gantt-month {
+  font-size: 0.74em;
+  font-weight: 500;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 2px 0;
+  border-left: 1px solid var(--background-modifier-border);
+}
+
+/* 子刻度标签（月度/周度模式的日期标注） */
+.mswb-gantt-sub-tick {
+  position: absolute;
+  top: 0;
+  font-size: 0.58em;
+  font-weight: 500;
+  color: var(--text-faint);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* 分组头 */
+.mswb-gantt-group-header {
+  display: flex;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  margin: 8px 0 4px;
+}
+
+.mswb-gantt-group-header .mswb-gantt-label-col {
+  font-size: 0.9em;
+  font-weight: 700;
+  color: var(--text-accent);
+}
+
+/* 行 */
+.mswb-gantt-row {
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  height: 64px;
+  position: relative;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mswb-gantt-row .mswb-gantt-label-col {
+  align-self: center;
+  padding: 0 8px;
+}
+
+.mswb-gantt-name {
+  font-size: 0.92em;
+  font-weight: 600;
+  color: var(--text-accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.mswb-gantt-name:hover {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+}
+
+/* 网格线 */
+.mswb-gantt-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed var(--background-modifier-border);
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.mswb-gantt-sub-grid-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dotted var(--background-modifier-border);
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+/* 今天线 — 贯穿全图 */
+.mswb-gantt-today-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 170px;
+  right: 0;
+  pointer-events: none;
+  z-index: 10;
+  overflow: visible;
+}
+
+.mswb-gantt-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--color-red);
+  opacity: 0.85;
+  /* 红色光晕增强可见性 */
+  box-shadow: 0 0 4px 1px rgba(255, 0, 0, 0.25);
+}
+
+/* 进度条 */
+.mswb-gantt-bar {
+  position: absolute;
+  top: 30px;
+  height: 20px;
+  border-radius: 4px;
+  opacity: 0.35;
+  overflow: visible;
+  min-width: 12px;
+  transition: opacity 0.15s;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mswb-gantt-bar:hover {
+  opacity: 0.5;
+}
+
+.mswb-gantt-bar.dragging {
+  opacity: 0.55;
+}
+
+/* 拖拽手柄 */
+.mswb-gantt-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+}
+
+.mswb-gantt-handle.left {
+  left: -4px;
+}
+
+.mswb-gantt-handle.right {
+  right: -4px;
+}
+
+.mswb-gantt-handle:hover {
+  background: color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.mswb-gantt-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  opacity: 0.7;
+  background: inherit;
+  border-radius: 4px 0 0 4px;
+  filter: brightness(0.7);
+}
+
+.mswb-gantt-bar-label {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.7em;
+  font-weight: 700;
+  color: var(--text-normal);
+  white-space: nowrap;
+  z-index: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.mswb-gantt-bar-label:hover {
+  color: var(--interactive-accent);
+}
+
+/* 阶段进度内联编辑框 */
+.mswb-gantt-phase-progress-input {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 16px;
+  font-size: 0.6em;
+  font-weight: 700;
+  text-align: center;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 3px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  z-index: 10;
+  padding: 0;
+  outline: none;
+}
+
+/* 主计划线 */
+.mswb-gantt-main-line {
+  position: absolute;
+  top: 18px;
+  height: 0;
+  border-bottom: 3px solid;
+  opacity: 0.7;
+  z-index: 3;
+}
+
+.mswb-gantt-main-line.dragging {
+  opacity: 0.9;
+}
+
+.mswb-gantt-main-line .mswb-gantt-handle {
+  pointer-events: auto;
+  height: 22px;
+  top: -11px;
+}
+
+.mswb-gantt-main-label-start {
+  position: absolute;
+  top: 0;
+  font-size: 0.7em;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transform: translateX(-100%);
+  padding-right: 4px;
+  z-index: 2;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.mswb-gantt-main-label-start:hover {
+  color: var(--text-accent);
+}
+
+.mswb-gantt-main-label-end {
+  position: absolute;
+  top: 0;
+  font-size: 0.7em;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding-left: 4px;
+  z-index: 2;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.mswb-gantt-main-label-end:hover {
+  color: var(--text-accent);
+}
+
+.mswb-gantt-main-progress {
+  position: absolute;
+  top: 0;
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--text-normal);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  cursor: pointer;
+  z-index: 2;
+  padding: 0 4px;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.mswb-gantt-main-progress:hover {
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
+}
+
+.mswb-gantt-progress-input {
+  position: absolute;
+  top: -2px;
+  width: 36px;
+  height: 16px;
+  font-size: 0.6em;
+  font-weight: 700;
+  text-align: center;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 3px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  z-index: 10;
+  padding: 0;
+  outline: none;
+  transform: translateX(-50%);
+}
+
+/* 日期内联编辑框 */
+.mswb-gantt-date-input {
+  position: absolute;
+  top: -2px;
+  width: 105px;
+  height: 16px;
+  font-size: 0.55em;
+  font-weight: 600;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 3px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  z-index: 10;
+  padding: 0 2px;
+  outline: none;
+  transform: translateX(-50%);
+}
+
+/* 里程碑 */
+.mswb-gantt-milestone {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+}
+
+.mswb-gantt-milestone-diamond {
+  position: absolute;
+  top: 11px;
+  left: -5px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid var(--text-accent);
+  cursor: pointer;
+  transition: border-bottom-color 0.15s;
+  z-index: 1;
+}
+
+.mswb-gantt-milestone-diamond:hover {
+  border-bottom-color: var(--interactive-accent);
+}
+
+.mswb-gantt-milestone-label {
+  position: absolute;
+  top: 20px;
+  left: -20px;
+  font-size: 0.7em;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transform: rotate(-30deg);
+  transform-origin: left top;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: color 0.15s, background 0.15s;
+  z-index: 2;
+}
+
+.mswb-gantt-milestone-label:hover {
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
+}
+
+/* 里程碑删除按钮（hover 时出现） */
+.mswb-gantt-ms-delete {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  width: 14px;
+  height: 14px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  font-size: 0.55em;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+
+.mswb-gantt-milestone:hover .mswb-gantt-ms-delete {
+  display: flex;
+}
+
+.mswb-gantt-ms-delete:hover {
+  background: var(--color-red);
+}
+
+/* 添加里程碑按钮（hover 行时出现） */
+.mswb-gantt-ms-add {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--text-faint);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.7em;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 4;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.mswb-gantt-row:hover .mswb-gantt-ms-add {
+  display: flex;
+}
+
+.mswb-gantt-ms-add:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+/* 添加阶段按钮 */
+.mswb-gantt-phase-add {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 18px;
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border: 1px dashed var(--text-faint);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.6em;
+  cursor: pointer;
+  z-index: 4;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.mswb-gantt-row:hover .mswb-gantt-phase-add {
+  display: flex;
+}
+
+.mswb-gantt-phase-add:hover {
+  border-color: var(--color-orange);
+  color: var(--color-orange);
+  background: var(--background-modifier-hover);
+}
+
+/* 阶段删除按钮（hover 时出现） */
+.mswb-gantt-phase-delete {
+  position: absolute;
+  top: -4px;
+  right: 8px;
+  width: 14px;
+  height: 14px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  font-size: 0.55em;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+
+.mswb-gantt-bar:hover .mswb-gantt-phase-delete {
+  display: flex;
+}
+
+.mswb-gantt-phase-delete:hover {
+  background: var(--color-red);
+}
+
+/* ===== Modal 内图标选择器 ===== */
+.mswb-icon-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.mswb-icon-option {
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 1em;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mswb-icon-option:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--text-muted);
+}
+
+.mswb-icon-option.selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* ===== 飞书面板 ===== */
+.mswb-feishu {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 顶部状态栏 */
+.mswb-feishu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.mswb-feishu-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mswb-feishu-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-green);
+  flex-shrink: 0;
+}
+
+/* 数据源切换 */
+.mswb-feishu-source-tabs {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* 面包屑 */
+.mswb-feishu-breadcrumb {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.mswb-feishu-breadcrumb-item {
+  cursor: pointer;
+  color: var(--link-color);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.mswb-feishu-breadcrumb-item:hover {
+  background: var(--background-modifier-hover);
+  text-decoration: underline;
+}
+
+.mswb-feishu-breadcrumb-item.active {
+  color: var(--text-normal);
+  font-weight: 600;
+  cursor: default;
+}
+
+.mswb-feishu-breadcrumb-item.active:hover {
+  background: transparent;
+  text-decoration: none;
+}
+
+.mswb-feishu-breadcrumb-sep {
+  margin: 0 2px;
+  color: var(--text-faint);
+}
+
+/* 项目分组标题 */
+.mswb-feishu-exclude-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-faint);
+  transition: opacity 0.1s;
+}
+
+.mswb-feishu-space-item:hover .mswb-feishu-exclude-btn {
+  opacity: 0.6;
+}
+
+.mswb-feishu-exclude-btn:hover {
+  opacity: 1 !important;
+  color: var(--text-warning);
+}
+
+.mswb-feishu-space-item.excluded {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.mswb-feishu-space-item.excluded .mswb-feishu-exclude-btn {
+  opacity: 0.7;
+}
+
+.mswb-feishu-project-header {
+  padding: 8px 14px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+  opacity: 0.85;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 2px;
+}
+
+.mswb-feishu-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 主体区域 */
+.mswb-feishu-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* 空间列表 */
+.mswb-feishu-spaces {
+  width: 240px;
+  min-width: 200px;
+  border-right: 1px solid var(--background-modifier-border);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.mswb-feishu-section-title {
+  padding: 10px 14px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mswb-feishu-space-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+  color: var(--text-normal);
+}
+
+.mswb-feishu-space-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-feishu-space-item.active {
+  background: var(--background-modifier-active-hover);
+  border-left-color: var(--interactive-accent);
+  font-weight: 500;
+}
+
+.mswb-feishu-space-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.mswb-feishu-space-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mswb-feishu-add-btn {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.mswb-feishu-add-btn:hover {
+  opacity: 1;
+}
+
+.mswb-feishu-add-space {
+  padding: 6px 14px;
+}
+
+/* 文档列表 */
+.mswb-feishu-docs {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.mswb-feishu-doc-list {
+  padding: 0;
+}
+
+.mswb-feishu-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+  transition: background 0.1s;
+}
+
+.mswb-feishu-doc-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-feishu-doc-row.child {
+  padding-left: 36px;
+  font-size: 12px;
+}
+
+.mswb-feishu-doc-row.child::before {
+  content: '└';
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+
+.mswb-feishu-doc-emoji {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
+}
+
+.mswb-feishu-doc-link {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-normal);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mswb-feishu-doc-link:hover {
+  color: var(--link-color);
+  text-decoration: underline;
+}
+
+.mswb-feishu-doc-type {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--background-secondary);
+  padding: 1px 7px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.mswb-feishu-doc-haschild {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.mswb-feishu-doc-time {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: right;
+}
+
+.mswb-feishu-delete-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.mswb-feishu-doc-row:hover .mswb-feishu-delete-btn {
+  opacity: 0.5;
+}
+
+.mswb-feishu-delete-btn:hover {
+  opacity: 1 !important;
+  background: var(--background-modifier-error);
+}
+
+.mswb-feishu-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* 链接检查区域 */
+.mswb-feishu-links {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.mswb-feishu-link-list {
+  padding: 0;
+}
+
+.mswb-feishu-link-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.mswb-feishu-link-item.ok {
+  background: transparent;
+}
+
+.mswb-feishu-link-item.fail {
+  background: rgba(var(--color-red-rgb, 255, 100, 100), 0.06);
+}
+
+.mswb-feishu-link-status {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.mswb-feishu-link-name {
+  font-weight: 500;
+  flex-shrink: 0;
+  min-width: 140px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mswb-feishu-link-type {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.mswb-feishu-link-url {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--link-color);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.mswb-feishu-link-url:hover {
+  text-decoration: underline;
+}
+
+.mswb-feishu-link-error {
+  font-size: 11px;
+  color: var(--text-error);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}

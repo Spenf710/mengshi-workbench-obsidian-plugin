@@ -1,0 +1,210 @@
+import { App, Modal, Setting, Notice } from 'obsidian';
+import { saveGanttOverride, getAllCategories, getAllVehicles, getConfig, setConfig, addCustomCategory, addCustomVehicle } from '../data/settings';
+import { addWorkingDays } from '../data/dateUtils';
+
+export class CreateProjectModal extends Modal {
+  private name = '';
+  private vehicle = '通用';
+  private category = '其他';
+  private root = '';
+  private purpose = '';
+  private startDate = '';
+  private workDays = 30;
+  private endDate = '';
+
+  constructor(app: App) {
+    super(app);
+    const now = new Date();
+    const roots = getConfig().projectRoots;
+    this.root = roots[0] ?? '项目管理-系统';
+    this.startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    this.endDate = addWorkingDays(this.startDate, this.workDays);
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('mswb-modal');
+
+    const titleEl = contentEl.createEl('h3');
+    const refreshTitle = () => { titleEl.textContent = `🆕 新建项目（#${this.getNextNumber()}）`; };
+    refreshTitle();
+
+    // 存放目录
+    const rootSetting = new Setting(contentEl).setName('存放目录');
+    this.makeInlineDropdown(rootSetting.controlEl,
+      getConfig().projectRoots, () => this.root,
+      v => { this.root = v; refreshTitle(); },
+      async v => {
+        const cfg = getConfig();
+        if (!cfg.projectRoots.includes(v)) { cfg.projectRoots.push(v); await setConfig(cfg); }
+      });
+
+    // 项目名称 + 项目目的（并排）
+    const r1 = contentEl.createDiv({ cls: 'mswb-modal-inlinerow' });
+    this.makeField(r1, '项目名称', t => { t.placeholder = '例：XX管理系统'; t.onChange(v => this.name = v); });
+    this.makeField(r1, '项目目的', t => { t.placeholder = '解决什么问题...'; t.onChange(v => this.purpose = v); });
+
+    // 所属车型 + 项目类别（并排）
+    const r2 = contentEl.createDiv({ cls: 'mswb-modal-inlinerow' });
+    this.makeField(r2, '所属车型', null, ctl => {
+      this.makeInlineDropdown(ctl, getAllVehicles(), () => this.vehicle, v => this.vehicle = v, addCustomVehicle);
+    });
+    this.makeField(r2, '项目类别', null, ctl => {
+      this.makeInlineDropdown(ctl, getAllCategories(), () => this.category, v => this.category = v, addCustomCategory);
+    });
+
+    // 开始日期 + 开发周期
+    const r3 = contentEl.createDiv({ cls: 'mswb-modal-inlinerow' });
+    this.makeField(r3, '开始日期', t => { t.setValue(this.startDate).onChange(v => { this.startDate = v; updateEnd(); }); t.inputEl.type = 'date'; });
+    this.makeField(r3, '开发周期', t => {
+      t.setValue(String(this.workDays)).onChange(v => {
+        const n = parseInt(v, 10); if (!isNaN(n) && n > 0) { this.workDays = n; updateEnd(); }
+      });
+      t.inputEl.type = 'number';
+    });
+
+    // 预计结束
+    const endSetting = new Setting(contentEl).setName('预计结束');
+    endSetting.addText(t => { t.setValue(this.endDate); t.inputEl.disabled = true; t.inputEl.style.opacity = '0.6'; });
+    const refreshEnd = () => { endSetting.controlEl.querySelector('input')!.value = this.endDate; };
+    const updateEnd = () => { this.endDate = addWorkingDays(this.startDate, this.workDays); refreshEnd(); };
+
+    // 按钮
+    const btnRow = contentEl.createDiv({ cls: 'mswb-modal-actions' });
+    btnRow.createEl('button', { text: '取消' }).addEventListener('click', () => this.close());
+    btnRow.createEl('button', { text: '创建项目', cls: 'mswb-modal-submit' })
+      .addEventListener('click', () => this.submit());
+  }
+
+  /** 创建并排字段 */
+  private makeField(
+    row: HTMLElement, label: string,
+    textCb?: ((t: ReturnType<Setting['addText']> extends (cb: infer C) => Setting ? C : never) => void) | null,
+    customCb?: (ctl: HTMLElement) => void,
+  ): void {
+    const wrap = row.createDiv({ cls: 'mswb-modal-field' });
+    wrap.createEl('label', { text: label, cls: 'mswb-modal-label' });
+    const ctl = wrap.createDiv();
+    if (customCb) {
+      customCb(ctl);
+    } else if (textCb) {
+      const input = ctl.createEl('input', { cls: 'mswb-modal-input' });
+      // 模拟 Obsidian TextComponent
+      const mock: any = {
+        inputEl: input,
+        setValue: (v: string) => { input.value = v; return mock; },
+        setPlaceholder: (p: string) => { input.placeholder = p; return mock; },
+        onChange: (fn: (v: string) => void) => { input.addEventListener('input', () => fn(input.value)); return mock; },
+      };
+      textCb(mock);
+    }
+  }
+
+  /** 内联下拉 + 新增 */
+  private makeInlineDropdown(
+    container: HTMLElement,
+    options: string[],
+    getCurrent: () => string,
+    onSelect: (v: string) => void,
+    onAdd?: (v: string) => Promise<void>,
+  ): void {
+    const showDropdown = () => {
+      const cur = getCurrent();
+      container.empty();
+      const sel = container.createEl('select');
+      sel.style.width = '100%';
+      for (const o of options) sel.createEl('option', { value: o, text: o });
+      sel.createEl('option', { value: '__new__', text: '+ 新增…' });
+      sel.value = options.includes(cur) ? cur : '__new__';
+      sel.addEventListener('change', () => {
+        if (sel.value === '__new__') showInput();
+        else onSelect(sel.value);
+      });
+    };
+
+    const saveAndClose = async (val: string) => {
+      onSelect(val);
+      if (!options.includes(val)) options.push(val);
+      showDropdown();
+      if (onAdd) await onAdd(val);
+    };
+
+    const showInput = () => {
+      container.empty();
+      const input = container.createEl('input');
+      input.type = 'text';
+      input.placeholder = '输入新值，回车确认';
+      input.style.width = '100%';
+      let saving = false;
+      input.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          saving = true;
+          await saveAndClose(input.value.trim());
+        }
+        if (e.key === 'Escape') { saving = true; showDropdown(); }
+      });
+      input.addEventListener('blur', async () => {
+        if (saving) return;
+        if (input.value.trim()) await saveAndClose(input.value.trim());
+        // 空输入不重建下拉（避免重新触发 showInput 造成焦点死循环）
+      });
+      input.focus();
+    };
+
+    showDropdown();
+  }
+
+  private getNextNumber(): number {
+    const files = this.app.vault.getFiles();
+    let max = 0;
+    const pattern = new RegExp(`^${this.root}/(\\d+)\\.`);
+    for (const f of files) {
+      const match = f.path.match(pattern);
+      if (match) { const n = parseInt(match[1], 10); if (n > max) max = n; }
+    }
+    return max + 1;
+  }
+
+  private async submit(): Promise<void> {
+    if (!this.name.trim()) { new Notice('请输入项目名称'); return; }
+    const num = this.getNextNumber();
+    const folderName = `${num}.${this.name.trim()}`;
+    const folderPath = `${this.root}/${folderName}`;
+    const readmeName = `${this.name.trim()}.README.md`;
+
+    if (this.app.vault.getAbstractFileByPath(folderPath)) { new Notice(`⚠️ 目录 ${folderPath} 已存在`); return; }
+    if (!this.app.vault.getAbstractFileByPath(this.root)) await this.app.vault.createFolder(this.root);
+    if (!getConfig().projectRoots.includes(this.root)) {
+      const cfg = getConfig(); cfg.projectRoots = [...cfg.projectRoots, this.root]; await setConfig(cfg);
+    }
+    this.endDate = addWorkingDays(this.startDate, this.workDays);
+
+    const content = [
+      '---', 'tags:', '  - 项目索引',
+      this.vehicle !== '通用' ? `  - ${this.vehicle}` : '', `  - ${this.category}`, '---',
+      '', `# ${this.name.trim()}`, '', `> ${this.purpose || '项目描述待补充'}`,
+      '', '## 核心信息', '', '| 项目 | 内容 |', '|------|------|',
+      `| **项目类型** | ${this.category} |`, `| **所属车型** | ${this.vehicle} |`,
+      `| **开发周期** | ${this.workDays} 工作日 |`, `| **预计周期** | ${this.startDate} ~ ${this.endDate} |`,
+      '| **当前状态** | 规划中 |',
+      '', '## 排期里程碑', '', '| 节点 | 日期 | 状态 |', '|------|------|------|',
+      `| 项目启动 | ${this.startDate} | ⏳ |`, `| 计划完成 | ${this.endDate} | ⏳ |`,
+      '', '## 文档索引', '',
+      '- [[00-背景与需求|00-背景与需求]]', '- [[01-方案设计|01-方案设计]]',
+      '', '---', '', '**相关笔记：**',
+    ].filter(l => l !== '').join('\n');
+
+    try {
+      await this.app.vault.createFolder(folderPath);
+      await this.app.vault.create(`${folderPath}/${readmeName}`, content);
+      await this.app.vault.create(`${folderPath}/00-背景与需求.md`, '# 00 — 背景与需求\n\n## 任务来源\n\n\n## 需求描述\n\n');
+      await this.app.vault.create(`${folderPath}/01-方案设计.md`, '# 01 — 方案设计\n\n## 技术选型\n\n\n## 架构概要\n\n');
+      await saveGanttOverride(folderName, { start: this.startDate, end: this.endDate, progress: 0 });
+      new Notice(`✅ 项目「${this.name}」创建成功`);
+      this.close();
+    } catch (e) { new Notice(`❌ 创建失败：${e}`); }
+  }
+
+  onClose(): void { this.contentEl.empty(); }
+}
