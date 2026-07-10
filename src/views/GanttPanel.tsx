@@ -174,7 +174,7 @@ async function syncToReadme(
           }
           return content;
         });
-      } catch (e) { /* 静默 */ }
+      } catch (e) { console.error('[猛士驾驶舱] README 同步失败:', e); }
       return;
     }
   });
@@ -365,7 +365,9 @@ export function GanttPanel({ app }: { app: App }) {
   // ---- 工具函数 ----
   const pxToDate = useCallback(
     (px: number): Date => {
-      const el = barColRef.current;
+      // 用表头 bar-col 做坐标基准（class 选择器，避免多元素 ref 竞争）
+      const el = barColRef.current?.querySelector('.mswb-gantt-bar-col') as HTMLElement | null
+        ?? barColRef.current;
       if (!el) return new Date();
       const rect = el.getBoundingClientRect();
       const pct = ((px - rect.left) / rect.width) * 100;

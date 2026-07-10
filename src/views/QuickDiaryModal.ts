@@ -35,7 +35,7 @@ async function readDiaryFields(app: App, filePath: string): Promise<{ status: st
   // 提取「搞定了什么」段落原始文本（保留缩进子项）
   const doneMatch = content.match(DONE_SECTION_RE);
   if (doneMatch) {
-    done = doneMatch[1].replace(/\n+$/, '');
+    done = doneMatch[2].replace(/\n+$/, '');
   }
 
   return { status, summary, done };

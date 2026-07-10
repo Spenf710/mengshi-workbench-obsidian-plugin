@@ -361,16 +361,16 @@ export async function toggleTask(
   if (!(file instanceof TFile)) return false;
 
   try {
+    // 用内容匹配替代行号，防止文件编辑后行号偏移导致改错行
+    const escaped = task.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+      `^(\\s*- )\\[([ x])\\]\\s*${escaped}\\s*$`,
+      'im',
+    );
+    const newMark = task.done ? ' ' : 'x';
+
     await app.vault.process(file, (content) => {
-      const lines = content.split('\n');
-      if (task.line < lines.length) {
-        if (task.done) {
-          lines[task.line] = lines[task.line].replace(/\[x\]/i, '[ ]');
-        } else {
-          lines[task.line] = lines[task.line].replace('[ ]', '[x]');
-        }
-      }
-      return lines.join('\n');
+      return content.replace(pattern, `$1[${newMark}] ${task.text}`);
     });
     return true;
   } catch {

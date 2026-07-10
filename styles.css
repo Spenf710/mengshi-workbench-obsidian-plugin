@@ -791,8 +791,12 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   background: var(--background-primary-alt);
-  cursor: pointer;
+  cursor: grab;
   max-width: 100%;
+}
+
+.mswb-mini-graph-canvas:active {
+  cursor: grabbing;
 }
 
 .mswb-mini-graph-legend {

@@ -190,9 +190,12 @@ export function getDateRange(tasks: GanttTask[]): { min: Date; max: Date } {
   const min = new Date(Math.min(...timestamps));
   const max = new Date(Math.max(...timestamps));
 
-  // 扩展 1 个月边距
+  // 扩展 1 个月边距（先归到月初避免月末溢出）
+  min.setDate(1);
   min.setMonth(min.getMonth() - 1);
-  max.setMonth(max.getMonth() + 1);
+  max.setDate(1);
+  max.setMonth(max.getMonth() + 2);
+  max.setDate(0);  // 目标月最后一天
 
   return { min, max };
 }

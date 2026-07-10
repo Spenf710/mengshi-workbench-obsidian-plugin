@@ -3,359 +3,311 @@ import { type App, Modal, TFile } from 'obsidian';
 import { createRoot, type Root } from 'react-dom/client';
 
 // ===== 类型 =====
-interface LinkTarget {
-  path: string;
-  label: string;
-}
+interface LinkTarget { path: string; label: string; }
 
 interface GraphNode {
-  id: string;
-  label: string;
-  path: string;
+  id: string; label: string; path: string;
   type: 'center' | 'outlink' | 'backlink';
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  /** 文字渲染边界（用于点击检测） */
-  labelX?: number;
-  labelY?: number;
-  labelW?: number;
+  x: number; y: number; vx: number; vy: number;
+  labelX?: number; labelY?: number; labelW?: number;
 }
 
-// ===== 力导向模拟常量 =====
-const CANVAS_W = 520;
-const CANVAS_H = 260;
-const CENTER_X = CANVAS_W / 2;
-const CENTER_Y = CANVAS_H / 2;
-const ITERATIONS = 120;
-const NODE_R = 5;
-const CENTER_R = 8;
-const HIT_PAD = 4;
-const LABEL_GAP = 4;
-const LABEL_MAX_LEN = 10;
-const LABEL_HIT_TOLERANCE = 8;
-
-// 模拟参数
-const SIM_DAMPING = 0.75;
-const SIM_SPRING_K = 0.003;
-const SIM_REPULSION_K = 1800;
-const SIM_BOUNDARY_PAD = 10;
-const SIM_INIT_RADIUS = 50;
-const SIM_INIT_SPREAD = 80;
-
-// 颜色（渲染 + 图例共享）
-const OUTLINK_COLOR = '#4ade80';
-const BACKLINK_COLOR = '#fb923c';
-
-// 字体
-const FONT_LABEL_BOLD = 'bold 11px -apple-system, sans-serif';
-const FONT_LABEL = '10px -apple-system, sans-serif';
+// ===== 常量 =====
+const W = 520, H = 260;
+const CX = W / 2, CY = H / 2;
+const NODE_R = 5, CENTER_R = 8;
+const HIT_PAD = 5, LABEL_GAP = 4, LABEL_MAX = 10, LABEL_HIT_Y = 9;
+const SIM_DAMPING = 0.5, SIM_SPRING = 0.012, SIM_REPEL = 900;
+const SIM_PAD = 15, SIM_INIT_R = 100, SIM_INIT_SPREAD = 40;
+const SIM_RING_TARGET = 95;
+const SIM_DRAG_BOUNCE = 4;
+const OUT_COLOR = '#4ade80', BACK_COLOR = '#fb923c';
+const FONT_BOLD = 'bold 11px -apple-system, sans-serif';
+const FONT_NORM = '10px -apple-system, sans-serif';
 const FONT_EMPTY = '13px -apple-system, sans-serif';
 
-function runSimulation(nodes: GraphNode[]): void {
-  if (nodes.length === 0) return;
-
+// ===== 单步模拟 =====
+function simStep(nodes: GraphNode[], alpha: number): number {
   const center = nodes.find((n) => n.type === 'center');
-  if (!center) return;
+  if (!center) return 0;
 
-  // 初始化：出链/入链节点在中心周围随机分布
-  for (const n of nodes) {
-    if (n.type === 'center') {
-      n.x = CENTER_X;
-      n.y = CENTER_Y;
-      n.vx = 0;
-      n.vy = 0;
-    } else {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = SIM_INIT_RADIUS + Math.random() * SIM_INIT_SPREAD;
-      n.x = CENTER_X + Math.cos(angle) * dist;
-      n.y = CENTER_Y + Math.sin(angle) * dist;
-      n.vx = 0;
-      n.vy = 0;
+  let energy = 0;
+
+  // 弹簧力：目标距离 SIM_RING_TARGET，偏离时拉回
+  for (let i = 1; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (!n) continue;
+    const dx = center.x - n.x, dy = center.y - n.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    // 偏离目标距离越多，回拉力越大；小于目标时向外推
+    const offset = dist - SIM_RING_TARGET;
+    const f = offset * SIM_SPRING * alpha + 0.03 * alpha;
+    n.vx += (dx / dist) * f;
+    n.vy += (dy / dist) * f;
+    energy += Math.abs(f);
+  }
+
+  // 节点间斥力
+  for (let i = 1; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      if (!a || !b) continue;
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx * dx + dy * dy || 1;
+      const f = (SIM_REPEL * alpha) / d2;
+      const fx = (dx / Math.sqrt(d2)) * f, fy = (dy / Math.sqrt(d2)) * f;
+      a.vx += fx; a.vy += fy;
+      b.vx -= fx; b.vy -= fy;
+      energy += f;
     }
   }
 
-  for (let tick = 0; tick < ITERATIONS; tick++) {
-    const alpha = 1 - tick / ITERATIONS;
-
-    for (let i = 1; i < nodes.length; i++) {
-      // 对中心节点的引力（弹簧力）
-      const dx = center.x - nodes[i].x;
-      const dy = center.y - nodes[i].y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const force = dist * SIM_SPRING_K * alpha;
-      nodes[i].vx += (dx / dist) * force;
-      nodes[i].vy += (dy / dist) * force;
-
-      // 节点间斥力
-      for (let j = i + 1; j < nodes.length; j++) {
-        const dx2 = nodes[i].x - nodes[j].x;
-        const dy2 = nodes[i].y - nodes[j].y;
-        const d2 = dx2 * dx2 + dy2 * dy2 || 1;
-        const f = (SIM_REPULSION_K * alpha) / d2;
-        nodes[i].vx += (dx2 / Math.sqrt(d2)) * f;
-        nodes[i].vy += (dy2 / Math.sqrt(d2)) * f;
-        nodes[j].vx -= (dx2 / Math.sqrt(d2)) * f;
-        nodes[j].vy -= (dy2 / Math.sqrt(d2)) * f;
-      }
-    }
-
-    // 应用速度 + 阻尼 + 边界
-    for (let i = 1; i < nodes.length; i++) {
-      nodes[i].vx *= SIM_DAMPING;
-      nodes[i].vy *= SIM_DAMPING;
-      nodes[i].x += nodes[i].vx;
-      nodes[i].y += nodes[i].vy;
-
-      const pad = NODE_R + SIM_BOUNDARY_PAD;
-      nodes[i].x = Math.max(pad, Math.min(CANVAS_W - pad, nodes[i].x));
-      nodes[i].y = Math.max(pad, Math.min(CANVAS_H - pad, nodes[i].y));
-    }
+  // 应用速度 + 边界
+  for (let i = 1; i < nodes.length; i++) {
+    const n = nodes[i];
+    if (!n) continue;
+    n.vx *= SIM_DAMPING; n.vy *= SIM_DAMPING;
+    n.x += n.vx; n.y += n.vy;
+    const p = SIM_PAD;
+    if (n.x < p) n.x = p;
+    if (n.x > W - p) n.x = W - p;
+    if (n.y < p) n.y = p;
+    if (n.y > H - p) n.y = H - p;
   }
+
+  return energy;
 }
 
-// ===== Canvas 初始化（renderGraph / renderEmpty 共享） =====
-function setupCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
+// ===== Canvas 初始化 =====
+function setupCv(c: HTMLCanvasElement): CanvasRenderingContext2D | null {
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = CANVAS_W * dpr;
-  canvas.height = CANVAS_H * dpr;
-  canvas.style.width = CANVAS_W + 'px';
-  canvas.style.height = CANVAS_H + 'px';
-  const ctx = canvas.getContext('2d');
+  c.width = W * dpr; c.height = H * dpr;
+  c.style.width = W + 'px'; c.style.height = H + 'px';
+  const ctx = c.getContext('2d');
   if (!ctx) return null;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   return ctx;
 }
 
-// ===== 渲染 =====
-function renderGraph(
-  ctx: CanvasRenderingContext2D,
-  nodes: GraphNode[],
-  canvas: HTMLCanvasElement,
+// ===== 渲染（含 hover / drag 高亮） =====
+function render(
+  ctx: CanvasRenderingContext2D, nodes: GraphNode[],
+  c: HTMLCanvasElement, hover: string | null, drag: string | null,
 ): void {
+  ctx.clearRect(0, 0, W, H);
   const center = nodes.find((n) => n.type === 'center');
   if (!center) return;
 
-  const cs = getComputedStyle(canvas);
-  const accentColor = cs.getPropertyValue('--interactive-accent').trim() || '#7c3aed';
-  const textColor = cs.getPropertyValue('--text-normal').trim() || '#333';
-  const bgModifier = cs.getPropertyValue('--background-modifier-border').trim() || '#ddd';
+  const cs = getComputedStyle(c);
+  const accent = cs.getPropertyValue('--interactive-accent').trim() || '#7c3aed';
+  const textCol = cs.getPropertyValue('--text-normal').trim() || '#333';
+  const bg = cs.getPropertyValue('--background-modifier-border').trim() || '#ddd';
 
   // 边
-  for (const node of nodes) {
-    if (node.type === 'center') continue;
+  for (const n of nodes) {
+    if (n.type === 'center') continue;
+    const isHoverEdge = hover === n.id || drag === n.id;
     ctx.beginPath();
     ctx.moveTo(center.x, center.y);
-    ctx.lineTo(node.x, node.y);
-    ctx.strokeStyle = bgModifier;
-    ctx.lineWidth = 1;
+    ctx.lineTo(n.x, n.y);
+    ctx.strokeStyle = isHoverEdge ? accent : bg;
+    ctx.lineWidth = isHoverEdge ? 1.5 : 0.8;
     ctx.stroke();
   }
 
   // 节点
-  for (const node of nodes) {
-    const r = node.type === 'center' ? CENTER_R : NODE_R;
+  for (const n of nodes) {
+    const r = n.type === 'center' ? CENTER_R : NODE_R;
+    const isHover = hover === n.id;
+    const isDrag = drag === n.id;
+
+    // 光晕
+    if (isHover || isDrag) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
+      ctx.fillStyle = accent + '30';
+      ctx.fill();
+    }
 
     ctx.beginPath();
-    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-    if (node.type === 'center') {
-      ctx.fillStyle = accentColor;
-    } else if (node.type === 'outlink') {
-      ctx.fillStyle = OUTLINK_COLOR;
-    } else {
-      ctx.fillStyle = BACKLINK_COLOR;
-    }
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    if (n.type === 'center') ctx.fillStyle = accent;
+    else if (n.type === 'outlink') ctx.fillStyle = OUT_COLOR;
+    else ctx.fillStyle = BACK_COLOR;
+    if (isDrag) ctx.globalAlpha = 0.7;
     ctx.fill();
+    ctx.globalAlpha = 1;
 
     // 标签
-    ctx.font = node.type === 'center' ? FONT_LABEL_BOLD : FONT_LABEL;
-    ctx.fillStyle = node.type === 'center' ? accentColor : textColor;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-
-    const displayLabel = node.label.length > LABEL_MAX_LEN
-      ? node.label.slice(0, LABEL_MAX_LEN) + '…'
-      : node.label;
-    const labelX = node.x + r + LABEL_GAP;
-    ctx.fillText(displayLabel, labelX, node.y);
-
-    // 存储文字边界供点击检测
-    const metrics = ctx.measureText(displayLabel);
-    node.labelX = labelX;
-    node.labelY = node.y;
-    node.labelW = metrics.width;
+    ctx.font = n.type === 'center' ? FONT_BOLD : FONT_NORM;
+    ctx.fillStyle = (isHover || isDrag) ? accent : (n.type === 'center' ? accent : textCol);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const txt = n.label.length > LABEL_MAX ? n.label.slice(0, LABEL_MAX) + '…' : n.label;
+    const lx = n.x + r + LABEL_GAP;
+    ctx.fillText(txt, lx, n.y);
+    const m = ctx.measureText(txt);
+    n.labelX = lx; n.labelY = n.y; n.labelW = m.width;
   }
 }
 
 // ===== 空状态 =====
-function renderEmpty(canvas: HTMLCanvasElement, msg: string): void {
-  const ctx = setupCanvas(canvas);
-  if (!ctx) return;
-
-  const cs = getComputedStyle(canvas);
-  const textMuted = cs.getPropertyValue('--text-muted').trim() || '#999';
+function renderEmpty(c: HTMLCanvasElement, msg: string): void {
+  const ctx = setupCv(c); if (!ctx) return;
   ctx.font = FONT_EMPTY;
-  ctx.fillStyle = textMuted;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(msg, CANVAS_W / 2, CANVAS_H / 2);
+  ctx.fillStyle = '#999';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(msg, W / 2, H / 2);
+}
+
+// ===== 命中检测 =====
+function hitNode(nodes: GraphNode[], mx: number, my: number): GraphNode | null {
+  for (const n of nodes) {
+    const r = (n.type === 'center' ? CENTER_R : NODE_R) + HIT_PAD;
+    if ((mx - n.x) ** 2 + (my - n.y) ** 2 <= r * r) return n;
+    if (n.labelX !== undefined && n.labelW !== undefined &&
+      mx >= n.labelX && mx <= n.labelX + n.labelW &&
+      my >= n.y - LABEL_HIT_Y && my <= n.y + LABEL_HIT_Y) return n;
+  }
+  return null;
+}
+
+function canvasPos(c: HTMLCanvasElement, e: MouseEvent): { mx: number; my: number } {
+  const r = c.getBoundingClientRect();
+  return { mx: (e.clientX - r.left) * (W / r.width), my: (e.clientY - r.top) * (H / r.height) };
 }
 
 // ===== 组件 =====
 export function MiniGraph({
-  app,
-  filePath,
-  dateLabel,
-}: {
-  app: App;
-  filePath: string;
-  dateLabel: string;
-}) {
+  app, filePath, dateLabel,
+}: { app: App; filePath: string; dateLabel: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<GraphNode[]>([]);
+  const simRef = useRef<{ raf: number; hover: string | null; drag: string | null; alpha: number } | null>(null);
+
+  // 清理上一个动画
+  const stopSim = useCallback(() => {
+    const s = simRef.current;
+    if (s) { cancelAnimationFrame(s.raf); simRef.current = null; }
+  }, []);
 
   useEffect(() => {
+    stopSim();
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = setupCv(canvas);
     if (!ctx) return;
 
-    // 获取文件
     const file = app.vault.getAbstractFileByPath(filePath);
-    if (!(file instanceof TFile)) {
-      renderEmpty(canvas, dateLabel + ' — 暂无日记');
-      nodesRef.current = [];
-      return;
-    }
+    if (!(file instanceof TFile)) { renderEmpty(canvas, dateLabel + ' — 暂无日记'); nodesRef.current = []; return; }
 
-    // 出链
+    // 收集链接
     const cache = app.metadataCache.getFileCache(file);
     const outlinks: LinkTarget[] = [];
-    if (cache?.links) {
-      for (const link of cache.links) {
-        const target = app.metadataCache.getFirstLinkpathDest(link.link, filePath);
-        if (target && target.path !== filePath) {
-          outlinks.push({ path: target.path, label: target.basename });
-        }
-      }
+    if (cache?.links) for (const l of cache.links) {
+      const t = app.metadataCache.getFirstLinkpathDest(l.link, filePath);
+      if (t && t.path !== filePath) outlinks.push({ path: t.path, label: t.basename });
     }
-
-    // 入链：扫描 resolvedLinks
     const backlinks: LinkTarget[] = [];
     const rl = app.metadataCache.resolvedLinks;
-    for (const [sourcePath, targets] of Object.entries(rl)) {
-      if (sourcePath === filePath) continue;
-      if (filePath in targets) {
-        const name = sourcePath.split('/').pop()?.replace(/\.md$/, '') ?? sourcePath;
-        backlinks.push({ path: sourcePath, label: name });
-      }
+    for (const [sp, tgts] of Object.entries(rl)) {
+      if (sp === filePath || !(filePath in tgts)) continue;
+      backlinks.push({ path: sp, label: sp.split('/').pop()?.replace(/\.md$/, '') ?? sp });
     }
-
-    // 去重（同是出链+入链 → 归入出链）
-    const outlinkPaths = new Set(outlinks.map((o) => o.path));
-    const uniqueBacklinks = backlinks.filter((b) => !outlinkPaths.has(b.path));
-    const allLinks = [...outlinks, ...uniqueBacklinks];
-
-    if (allLinks.length === 0) {
-      renderEmpty(canvas, '暂无关联笔记');
-      nodesRef.current = [];
-      return;
-    }
+    const outP = new Set(outlinks.map(o => o.path));
+    const uniqBack = backlinks.filter(b => !outP.has(b.path));
+    const allLinks = [...outlinks, ...uniqBack];
+    if (allLinks.length === 0) { renderEmpty(canvas, '暂无关联笔记'); nodesRef.current = []; return; }
 
     // 构建节点
     const nodes: GraphNode[] = [
-      {
-        id: 'center',
-        label: dateLabel,
-        path: filePath,
-        type: 'center',
-        x: 0, y: 0, vx: 0, vy: 0,
-      },
-      ...outlinks.map((l) => ({
-        id: l.path,
-        label: l.label,
-        path: l.path,
-        type: 'outlink' as const,
-        x: 0, y: 0, vx: 0, vy: 0,
-      })),
-      ...uniqueBacklinks.map((l) => ({
-        id: l.path,
-        label: l.label,
-        path: l.path,
-        type: 'backlink' as const,
-        x: 0, y: 0, vx: 0, vy: 0,
-      })),
+      { id: 'center', label: dateLabel, path: filePath, type: 'center', x: CX, y: CY, vx: 0, vy: 0 },
+      ...outlinks.map(l => ({ id: l.path, label: l.label, path: l.path, type: 'outlink' as const, x: 0, y: 0, vx: 0, vy: 0 })),
+      ...uniqBack.map(l => ({ id: l.path, label: l.label, path: l.path, type: 'backlink' as const, x: 0, y: 0, vx: 0, vy: 0 })),
     ];
+    // 初始环形分散排列（保证名称可读）
+    const ringCount = nodes.length - 1;
+    for (let i = 1; i < nodes.length; i++) {
+      const n = nodes[i];
+      const angle = (i - 1) / ringCount * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
+      const dist = SIM_INIT_R + Math.random() * SIM_INIT_SPREAD;
+      n.x = CX + Math.cos(angle) * dist;
+      n.y = CY + Math.sin(angle) * dist;
+    }
 
-    runSimulation(nodes);
-    renderGraph(ctx, nodes, canvas);
     nodesRef.current = nodes;
-  }, [app, filePath, dateLabel]);
 
-  // Canvas 点击 → 跳转
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = CANVAS_W / rect.width;
-      const scaleY = CANVAS_H / rect.height;
-      const mx = (e.clientX - rect.left) * scaleX;
-      const my = (e.clientY - rect.top) * scaleY;
+    // 动画状态
+    const state = { raf: 0, hover: null as string | null, drag: null as string | null, alpha: 1.0 };
 
-      for (const node of nodesRef.current) {
-        const r = (node.type === 'center' ? CENTER_R : NODE_R) + HIT_PAD;
-        const dx = mx - node.x;
-        const dy = my - node.y;
-        // 圆点命中
-        if (dx * dx + dy * dy <= r * r) {
-          const f = app.vault.getAbstractFileByPath(node.path);
-          if (f instanceof TFile) app.workspace.getLeaf(false).openFile(f);
-          return;
-        }
-        // 文字标签命中（±tolerance 容差）
-        if (
-          node.labelX !== undefined && node.labelY !== undefined && node.labelW !== undefined &&
-          mx >= node.labelX && mx <= node.labelX + node.labelW &&
-          my >= node.labelY - LABEL_HIT_TOLERANCE && my <= node.labelY + LABEL_HIT_TOLERANCE
-        ) {
-          const f = app.vault.getAbstractFileByPath(node.path);
-          if (f instanceof TFile) app.workspace.getLeaf(false).openFile(f);
-          return;
-        }
+    // --- 鼠标事件 ---
+    const onDown = (e: MouseEvent) => {
+      const { mx, my } = canvasPos(canvas, e);
+      const hit = hitNode(nodes, mx, my);
+      if (hit) { state.drag = hit.id; state.hover = hit.id; }
+    };
+    const onMove = (e: MouseEvent) => {
+      const { mx, my } = canvasPos(canvas, e);
+      if (state.drag) {
+        const n = nodes.find(x => x.id === state.drag);
+        if (n) { n.x = mx; n.y = my; n.vx = 0; n.vy = 0; }
+      } else {
+        state.hover = hitNode(nodes, mx, my)?.id ?? null;
       }
-    },
-    [app],
-  );
+    };
+    const onUp = () => {
+      if (state.drag) {
+        // 拖拽松手 → 给一点随机初速度让节点自然回弹
+        const n = nodes.find(x => x.id === state.drag);
+        if (n) { n.vx = (Math.random() - 0.5) * SIM_DRAG_BOUNCE; n.vy = (Math.random() - 0.5) * SIM_DRAG_BOUNCE; }
+      }
+      state.drag = null;
+    };
+    canvas.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+
+    // --- 双击 → 打开文件 ---
+    const onDbl = (e: MouseEvent) => {
+      const { mx, my } = canvasPos(canvas, e);
+      const hit = hitNode(nodes, mx, my);
+      if (hit) { const f = app.vault.getAbstractFileByPath(hit.path); if (f instanceof TFile) app.workspace.getLeaf(false).openFile(f); }
+    };
+    canvas.addEventListener('dblclick', onDbl);
+
+    // --- 动画循环 ---
+    const tick = () => {
+      if (!state.drag) state.alpha *= 0.985;
+      simStep(nodes, state.alpha * 0.7);
+      render(ctx, nodes, canvas, state.hover, state.drag);
+      state.raf = requestAnimationFrame(tick);
+    };
+    state.raf = requestAnimationFrame(tick);
+    simRef.current = state;
+
+    return () => {
+      cancelAnimationFrame(state.raf);
+      canvas.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      canvas.removeEventListener('dblclick', onDbl);
+      simRef.current = null;
+    };
+  }, [app, filePath, dateLabel, stopSim]);
 
   return (
     <div className="mswb-mini-graph">
-      <div className="mswb-mini-graph-header">
-        🔗 双链图谱 · {dateLabel}
-      </div>
-      <canvas
-        ref={canvasRef}
-        className="mswb-mini-graph-canvas"
-        onClick={handleClick}
-      />
+      <div className="mswb-mini-graph-header">🔗 双链图谱 · {dateLabel}</div>
+      <canvas ref={canvasRef} className="mswb-mini-graph-canvas" />
       <div className="mswb-mini-graph-legend">
-        <span className="mswb-graph-legend-item">
-          <span className="mswb-graph-dot" style={{ background: OUTLINK_COLOR }} /> 出链
-        </span>
-        <span className="mswb-graph-legend-item">
-          <span className="mswb-graph-dot" style={{ background: BACKLINK_COLOR }} /> 入链
-        </span>
-        <span className="mswb-graph-legend-item">
-          点击节点或文字跳转
-        </span>
+        <span className="mswb-graph-legend-item"><span className="mswb-graph-dot" style={{ background: OUT_COLOR }} /> 出链</span>
+        <span className="mswb-graph-legend-item"><span className="mswb-graph-dot" style={{ background: BACK_COLOR }} /> 入链</span>
+        <span className="mswb-graph-legend-item">拖拽节点 · 双击跳转 · hover 高亮</span>
       </div>
     </div>
   );
 }
 
-// ===== 图谱弹窗（脱离日历面板，独立 Modal 展示） =====
+// ===== 图谱弹窗 =====
 export class GraphModal extends Modal {
   private root: Root | null = null;
   private filePath: string;
@@ -371,23 +323,13 @@ export class GraphModal extends Modal {
     this.contentEl.empty();
     this.contentEl.addClass('mswb-modal');
     this.contentEl.createEl('h3', { text: `🔗 双链图谱 · ${this.dateLabel}` });
-
     const container = this.contentEl.createDiv({ cls: 'mswb-graph-modal-body' });
     this.root = createRoot(container);
-    this.root.render(
-      React.createElement(MiniGraph, {
-        app: this.pluginApp,
-        filePath: this.filePath,
-        dateLabel: this.dateLabel,
-      }),
-    );
+    this.root.render(React.createElement(MiniGraph, { app: this.pluginApp, filePath: this.filePath, dateLabel: this.dateLabel }));
   }
 
   onClose(): void {
-    if (this.root) {
-      this.root.unmount();
-      this.root = null;
-    }
+    if (this.root) { this.root.unmount(); this.root = null; }
     this.contentEl.empty();
   }
 }

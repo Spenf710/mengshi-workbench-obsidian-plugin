@@ -96,6 +96,7 @@ export async function resetConfig(): Promise<void> {
 // ===== 实例 =====
 let pluginInstance: Plugin | null = null;
 let dataCache: PluginData = {};
+let persistQueue: Promise<void> = Promise.resolve();
 
 /** 插件加载时调用，必须 await */
 export async function initSettings(plugin: Plugin): Promise<void> {
@@ -103,9 +104,11 @@ export async function initSettings(plugin: Plugin): Promise<void> {
   dataCache = (await plugin.loadData()) ?? {};
 }
 
-async function persist() {
-  if (!pluginInstance) return;
-  await pluginInstance.saveData(dataCache);
+/** 串行化持久化，防止并发写入互相覆盖 */
+function persist(): Promise<void> {
+  if (!pluginInstance) return Promise.resolve();
+  persistQueue = persistQueue.then(() => pluginInstance!.saveData(dataCache));
+  return persistQueue;
 }
 
 // ===== URL 管理 =====
