@@ -58,6 +58,8 @@ export interface PluginConfig {
   projectRoots: string[];
   baseCategories: string[];
   baseVehicles: string[];
+  /** 生长面板排除的文件夹路径（不会出现在种子浏览器中） */
+  excludedFolders: string[];
 }
 
 const DEFAULT_CONFIG: PluginConfig = {
@@ -66,6 +68,7 @@ const DEFAULT_CONFIG: PluginConfig = {
   projectRoots: ['项目管理-系统', '项目管理-车型', '日常工作-通用'],
   baseCategories: ['多维表', 'RPA自动化', 'AI智能体', '工具开发', '车型项目', '其他'],
   baseVehicles: ['通用', 'M18-3', 'M18-2'],
+  excludedFolders: ['工作日志/', '工作周报/', 'templates/', '.obsidian/', '.claude/', '.claudian/', '.trash/'],
 };
 
 interface PluginData {
@@ -77,6 +80,11 @@ interface PluginData {
   customVehicles?: string[];
   domainIcons?: Record<string, string>;
   feishu?: FeishuConfig;
+  growthHistory?: GrowthHistory;
+  growthConfig?: GrowthConfig;
+  llm?: LlmConfig;
+  summaryCache?: Record<string, string>;
+  growthDirections?: Record<string, any[]>;
 }
 
 export function getConfig(): PluginConfig {
@@ -250,5 +258,166 @@ export function getFeishuConfig(): FeishuConfig {
 
 export async function setFeishuConfig(config: Partial<FeishuConfig>): Promise<void> {
   dataCache.feishu = { ...DEFAULT_FEISHU_CONFIG, ...dataCache.feishu, ...config };
+  await persist();
+}
+
+// ===== 生长面板（Growth Panel）数据管理 =====
+
+export interface GrowthCollision {
+  date: string;
+  noteA: string;
+  noteB: string;
+  action: 'linked' | 'new_note' | 'skipped';
+  resultPath?: string;
+  userInput?: string;
+}
+
+export interface GrowthRegrowth {
+  date: string;
+  notePath: string;
+  snippet: string;
+}
+
+export interface GrowthIgnoredSuggestion {
+  noteA: string;
+  noteB: string;
+  ignoreUntil: string;
+}
+
+export interface GrowthGeneratedMoc {
+  topic: string;
+  mocPath: string;
+  noteCount: number;
+}
+
+export interface GrowthHistory {
+  collisions?: GrowthCollision[];
+  regrowths?: GrowthRegrowth[];
+  ignoredSuggestions?: GrowthIgnoredSuggestion[];
+  generatedMocs?: GrowthGeneratedMoc[];
+}
+
+export interface GrowthConfig {
+  dailyCollisionCount: number;
+  collisionStrategies: string[];
+  regrowthMinAgeDays: number;
+}
+
+const DEFAULT_GROWTH_CONFIG: GrowthConfig = {
+  dailyCollisionCount: 1,
+  collisionStrategies: ['cross-domain', 'tag-adjacent', 'time-span', 'random'],
+  regrowthMinAgeDays: 30,
+};
+
+const DEFAULT_GROWTH_HISTORY: GrowthHistory = {
+  collisions: [],
+  regrowths: [],
+  ignoredSuggestions: [],
+  generatedMocs: [],
+};
+
+// ===== 生长历史 =====
+export function getGrowthHistory(): GrowthHistory {
+  return dataCache.growthHistory ?? DEFAULT_GROWTH_HISTORY;
+}
+
+export async function saveGrowthHistory(history: GrowthHistory): Promise<void> {
+  dataCache.growthHistory = history;
+  await persist();
+}
+
+export async function addCollisionRecord(record: GrowthCollision): Promise<void> {
+  const h = getGrowthHistory();
+  if (!h.collisions) h.collisions = [];
+  h.collisions.push(record);
+  await saveGrowthHistory(h);
+}
+
+export async function addRegrowthRecord(record: GrowthRegrowth): Promise<void> {
+  const h = getGrowthHistory();
+  if (!h.regrowths) h.regrowths = [];
+  h.regrowths.push(record);
+  await saveGrowthHistory(h);
+}
+
+export async function addIgnoredSuggestion(suggestion: GrowthIgnoredSuggestion): Promise<void> {
+  const h = getGrowthHistory();
+  if (!h.ignoredSuggestions) h.ignoredSuggestions = [];
+  h.ignoredSuggestions.push(suggestion);
+  await saveGrowthHistory(h);
+}
+
+export async function addGeneratedMoc(moc: GrowthGeneratedMoc): Promise<void> {
+  const h = getGrowthHistory();
+  if (!h.generatedMocs) h.generatedMocs = [];
+  h.generatedMocs.push(moc);
+  await saveGrowthHistory(h);
+}
+
+// ===== 生长配置 =====
+export function getGrowthConfig(): GrowthConfig {
+  return { ...DEFAULT_GROWTH_CONFIG, ...dataCache.growthConfig };
+}
+
+export async function setGrowthConfig(config: Partial<GrowthConfig>): Promise<void> {
+  dataCache.growthConfig = { ...getGrowthConfig(), ...config };
+  await persist();
+}
+
+// ===== LLM 配置 =====
+
+export interface LlmConfig {
+  /** API 类型：openai（OpenAI 兼容）/ anthropic（Anthropic Messages 兼容） */
+  apiType: 'openai' | 'anthropic';
+  /** 接口地址，如 http://127.0.0.1:15721 或 https://api.deepseek.com/anthropic */
+  endpoint: string;
+  /** 模型名，如 deepseek-v4-flash / gpt-4o-mini */
+  model: string;
+  /** API Key */
+  apiKey: string;
+}
+
+const DEFAULT_LLM_CONFIG: LlmConfig = {
+  apiType: 'openai',
+  endpoint: '',
+  model: '',
+  apiKey: '',
+};
+
+export function getLlmConfig(): LlmConfig {
+  return { ...DEFAULT_LLM_CONFIG, ...dataCache.llm };
+}
+
+export async function setLlmConfig(config: Partial<LlmConfig>): Promise<void> {
+  dataCache.llm = { ...getLlmConfig(), ...config };
+  await persist();
+}
+
+export function isLlmConfigured(): boolean {
+  const cfg = getLlmConfig();
+  return !!(cfg.endpoint && cfg.model);
+}
+
+// ===== 摘要缓存 =====
+
+export function getSummary(path: string): string | null {
+  return dataCache.summaryCache?.[path] ?? null;
+}
+
+export async function saveSummary(path: string, summary: string): Promise<void> {
+  if (!dataCache.summaryCache) dataCache.summaryCache = {};
+  dataCache.summaryCache[path] = summary;
+  await persist();
+}
+
+// ===== 生长方向缓存 =====
+
+export function getGrowthDirections(path: string): any[] | null {
+  return dataCache.growthDirections?.[path] ?? null;
+}
+
+export async function saveGrowthDirections(path: string, directions: any[]): Promise<void> {
+  if (!dataCache.growthDirections) dataCache.growthDirections = {};
+  dataCache.growthDirections[path] = directions;
   await persist();
 }
