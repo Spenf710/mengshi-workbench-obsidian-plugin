@@ -17,7 +17,6 @@ import { QuickTodoModal } from './QuickTodoModal';
 import { ProjectFilesModal } from './ProjectFilesModal';
 import { GanttPanel } from './GanttPanel';
 import { FeishuPanel } from './FeishuPanel';
-import { GrowthPanel } from './GrowthPanel';
 import { CreateProjectModal } from './CreateProjectModal';
 import { GANTT_DATA } from '../data/ganttData';
 import { saveProjectMeta, getGanttOverrides, addCustomCategory, addCustomVehicle, removeCustomCategory, removeCustomVehicle, getCategoryUsage, getConfig, getDomainIcon, setDomainIcon } from '../data/settings';
@@ -38,7 +37,7 @@ import {
 } from '../data/taskScanner';
 
 // ===== 常量 =====
-type TabKey = 'calendar' | 'projects' | 'todos' | 'gantt' | 'feishu' | 'growth';
+type TabKey = 'calendar' | 'projects' | 'todos' | 'gantt' | 'feishu';
 type SortMode = 'source' | 'vehicle' | 'system';
 
 const TABS = [
@@ -46,7 +45,6 @@ const TABS = [
   { key: 'projects' as const, label: '项目', icon: '📂' },
   { key: 'todos' as const, label: '待办', icon: '✅' },
   { key: 'gantt' as const, label: '排期', icon: '📊' },
-  { key: 'growth' as const, label: '生长', icon: '🌱' },
   { key: 'feishu' as const, label: '飞书', icon: '📡' },
 ];
 
@@ -82,7 +80,6 @@ export function WorkbenchApp({ app }: { app: App }) {
         {activeTab === 'todos' && <div key={`todo-${refreshKey}`} style={{height:'100%'}}><TodosPanel app={app} /></div>}
         {activeTab === 'gantt' && <div key={`gantt-${refreshKey}`} style={{height:'100%'}}><GanttPanel app={app} /></div>}
         {activeTab === 'feishu' && <div key={`feishu-${refreshKey}`} style={{height:'100%'}}><FeishuPanel app={app} /></div>}
-        {activeTab === 'growth' && <div key={`growth-${refreshKey}`} style={{height:'100%'}}><GrowthPanel app={app} /></div>}
       </div>
 
       {/* 快捷录入按钮 */}
@@ -102,6 +99,19 @@ export function WorkbenchApp({ app }: { app: App }) {
         >
           <span className="mswb-fab-icon">✅</span>
           <span className="mswb-fab-label">待办</span>
+        </button>
+        <button
+          className="mswb-fab-btn"
+          onClick={() => {
+            const growthPlugin = (app as any).plugins?.plugins?.['mengshi-growth'];
+            if (growthPlugin) {
+              growthPlugin.activateView();
+            }
+          }}
+          title="打开生长 — AI 知识网络工具"
+        >
+          <span className="mswb-fab-icon">🌱</span>
+          <span className="mswb-fab-label">生长</span>
         </button>
         <button
           className="mswb-fab-btn"

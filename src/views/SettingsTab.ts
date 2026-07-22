@@ -4,8 +4,6 @@ import {
   getConfig,
   setConfig,
   resetConfig,
-  getLlmConfig,
-  setLlmConfig,
   type PluginConfig,
 } from '../data/settings';
 
@@ -133,83 +131,6 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           this.renderList(vehContainer, this.config.baseVehicles, (v) => { this.config.baseVehicles = v; });
         }
       }));
-
-    // ===== 生长面板排除文件夹 =====
-    containerEl.createEl('h3', { text: '🌱 生长面板排除文件夹' });
-    containerEl.createEl('p', { text: '这些文件夹不会出现在种子浏览器和知识扫描中。以 / 结尾表示前缀匹配。', cls: 'setting-item-description' });
-
-    const exclContainer = containerEl.createDiv();
-    this.renderList(exclContainer, this.config.excludedFolders, (v) => {
-      this.config.excludedFolders = v;
-    });
-
-    new Setting(containerEl)
-      .setName('添加排除文件夹')
-      .addText((t) => {
-        t.setPlaceholder('例: Clippings/');
-        t.inputEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && t.getValue().trim()) {
-            if (!this.config.excludedFolders.includes(t.getValue().trim())) {
-              this.config.excludedFolders.push(t.getValue().trim());
-              t.setValue('');
-              this.renderList(exclContainer, this.config.excludedFolders, (v) => { this.config.excludedFolders = v; });
-            }
-          }
-        });
-      })
-      .addButton((b) => b.setButtonText('+').onClick(() => {
-        const input = containerEl.querySelector('input[placeholder="例: Clippings/"]') as HTMLInputElement;
-        if (input && input.value.trim() && !this.config.excludedFolders.includes(input.value.trim())) {
-          this.config.excludedFolders.push(input.value.trim());
-          input.value = '';
-          this.renderList(exclContainer, this.config.excludedFolders, (v) => { this.config.excludedFolders = v; });
-        }
-      }));
-
-    // ===== AI 摘要配置 =====
-    containerEl.createEl('h3', { text: '🤖 AI 摘要配置' });
-    containerEl.createEl('p', { text: '碰撞面板的笔记摘要由 LLM 生成。支持 OpenAI 兼容接口和 Anthropic Messages 兼容接口。', cls: 'setting-item-description' });
-
-    const llm = getLlmConfig();
-
-    new Setting(containerEl)
-      .setName('API 类型')
-      .setDesc('OpenAI：/chat/completions 格式；Anthropic：/messages 格式（DeepSeek 等）')
-      .addDropdown((d) => {
-        d.addOption('openai', 'OpenAI 兼容');
-        d.addOption('anthropic', 'Anthropic 兼容');
-        d.setValue(llm.apiType ?? 'openai');
-        d.onChange(async (v) => { await setLlmConfig({ apiType: v as 'openai' | 'anthropic' }); });
-      });
-
-    const endpointSetting = new Setting(containerEl)
-      .setName('接口地址')
-      .addText((t) =>
-        t.setValue(llm.endpoint)
-          .setPlaceholder('https://api.deepseek.com/anthropic')
-          .onChange(async (v) => { await setLlmConfig({ endpoint: v.trim() }); }));
-
-    endpointSetting.descEl.innerHTML =
-      '路由/中转：http://127.0.0.1:15721（OpenCode Go 等本地代理）<br>' +
-      '直连：https://api.deepseek.com/anthropic（DeepSeek）';
-
-    new Setting(containerEl)
-      .setName('模型名')
-      .setDesc('如 deepseek-v4-flash、qwen-plus、qwen-max、glm-4-flash 等')
-      .addText((t) =>
-        t.setValue(llm.model)
-          .setPlaceholder('deepseek-v4-flash')
-          .onChange(async (v) => { await setLlmConfig({ model: v.trim() }); }));
-
-    new Setting(containerEl)
-      .setName('API Key')
-      .setDesc('直连 API 填写对应厂商的 Key，本地路由可留空')
-      .addText((t) => {
-        t.setValue(llm.apiKey)
-          .setPlaceholder('sk-xxxxxxxx（直连填写，路由留空）');
-        t.inputEl.type = 'password';
-        t.onChange(async (v) => { await setLlmConfig({ apiKey: v.trim() }); });
-      });
 
     // ===== 操作按钮 =====
     containerEl.createEl('h3', { text: '⚙ 操作' });
