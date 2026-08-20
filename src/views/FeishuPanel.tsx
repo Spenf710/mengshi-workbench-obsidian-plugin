@@ -28,6 +28,8 @@ import {
   groupDriveByType,
   mergeProjectMaps,
   deleteDriveFile,
+  batchGetStatistics,
+  type StatisticsInfo,
   type DriveProjectGroup,
   type ProjectMapEntry,
   type MeetingMinute,
@@ -122,7 +124,14 @@ export function FeishuPanel({ app }: { app: App }) {
   // 深度扫描结果（项目视图用）
   const [projectGroups, setProjectGroups] = useState<DriveProjectGroup[]>(() => {
     const cached = getFeishuConfig().cachedProjectGroups;
-    return Array.isArray(cached) ? cached : [];
+    if (!Array.isArray(cached)) return [];
+    // 清理缓存中的旧「其他」分组，同时过滤掉所有文字记录文件
+    return cached
+      .filter((g: any) => g.key !== '__other__')
+      .map((g: any) => ({
+        ...g,
+        files: (g.files || []).filter((f: DriveFile) => !/文字记录/.test(f.name)),
+      }));
   });
   const [typeGroups, setTypeGroups] = useState<DriveProjectGroup[]>(() => {
     const cached = getFeishuConfig().cachedTypeGroups;
@@ -141,6 +150,26 @@ export function FeishuPanel({ app }: { app: App }) {
     return Array.isArray(cached) ? cached : [];
   });
   const [minutesLoading, setMinutesLoading] = useState(false);
+
+  // 文件统计信息（访问人数）
+  const [statsMap, setStatsMap] = useState<Map<string, StatisticsInfo>>(new Map());
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  /** 为指定文件列表加载统计信息 */
+  const loadStatsForFiles = useCallback(async (files: DriveFile[]) => {
+    const entries = files.filter((f) => f.type !== 'folder').map((f) => ({ token: f.token, type: f.type }));
+    if (entries.length === 0) return;
+    const needLoad = entries.filter((e) => !statsMap.has(e.token));
+    if (needLoad.length === 0) return;
+    setStatsLoading(true);
+    const map = await batchGetStatistics(needLoad);
+    setStatsMap((prev) => {
+      const merged = new Map(prev);
+      map.forEach((v, k) => merged.set(k, v));
+      return merged;
+    });
+    setStatsLoading(false);
+  }, [statsMap]);
 
   // 加载智能纪要
   const doLoadMinutes = async () => {
@@ -177,6 +206,39 @@ export function FeishuPanel({ app }: { app: App }) {
     const updatedType = typeGroups.map((g) => ({ ...g, files: g.files.filter((f) => f.token !== file.token) }));
     setFeishuConfig({ cachedProjectGroups: updatedProject, cachedTypeGroups: updatedType });
   };
+
+  // 将文件移动到指定项目（手动覆盖自动分配）
+  const handleMoveFile = async (file: DriveFile, targetProjectKey: string) => {
+    const cfg = getFeishuConfig();
+    const overrides = { ...(cfg.fileOverrides || {}) };
+    if (targetProjectKey === '__unassigned__') {
+      // 移回待分配 = 删除覆盖记录，让文件重新走自动匹配
+      delete overrides[file.token];
+    } else {
+      overrides[file.token] = targetProjectKey;
+    }
+    await setFeishuConfig({ fileOverrides: overrides });
+
+    // 即时更新 UI 分组
+    const moveFileAcrossGroups = (groups: DriveProjectGroup[]): DriveProjectGroup[] => {
+      const src = groups.find((g) => g.files.some((f) => f.token === file.token));
+      const dst = groups.find((g) => g.key === targetProjectKey);
+      if (!src || !dst) return groups;
+      return groups.map((g) => {
+        if (g.key === src.key) return { ...g, files: g.files.filter((f) => f.token !== file.token) };
+        if (g.key === dst.key) return { ...g, files: [...g.files, file] };
+        return g;
+      });
+    };
+    setProjectGroups((prev) => moveFileAcrossGroups(prev));
+    const updatedProject = moveFileAcrossGroups(projectGroups);
+    setFeishuConfig({ cachedProjectGroups: updatedProject });
+  };
+
+  /** 获取所有项目键列表（用于移动弹窗选项，包含待分配，排除当前所在分组） */
+  const allProjectKeys = useMemo(() => {
+    return projectGroups.map((g) => ({ key: g.key, emoji: g.emoji, name: g.name }));
+  }, [projectGroups]);
 
   // Wiki 状态
   const [spaces, setSpaces] = useState<FeishuSpace[]>([]);
@@ -229,10 +291,10 @@ export function FeishuPanel({ app }: { app: App }) {
   // 第一阶段：扫描 vault，立即显示项目骨架
   const buildProjectSkeleton = useCallback(async () => {
     const vaultProjects = (await scanProjects(app)).map((p) => ({
-      folderName: p.folderName, name: p.name, emoji: p.emoji,
+      folderName: p.folderName, name: p.name, emoji: p.emoji, systemType: p.systemType,
     }));
     const metaProjects = Object.entries(PROJECT_META).map(([key, m]) => ({
-      key, emoji: m.emoji, name: m.name,
+      key, emoji: m.emoji, name: m.name, systemType: m.systemType,
     }));
     return mergeProjectMaps(metaProjects, vaultProjects);
   }, [app]);
@@ -248,9 +310,9 @@ export function FeishuPanel({ app }: { app: App }) {
       const emptyGroups: DriveProjectGroup[] = projectList.map((p) => ({
         key: p.key, emoji: p.emoji, name: p.name, files: [],
       }));
-      // 项目视图：仅项目 + 其他
-      setProjectGroups([...emptyGroups, { key: '__other__', emoji: '📁', name: '其他', files: [] }]);
-      setSelectedProject(emptyGroups[0]?.key || '__other__');
+      // 项目视图：仅项目，不展示「其他」
+      setProjectGroups(emptyGroups);
+      setSelectedProject(emptyGroups[0]?.key || null);
 
       // 第二步：后台扫描云盘，文件逐批填入已有项目骨架
       const rootFiles = await loadDriveRoot(true);
@@ -267,7 +329,8 @@ export function FeishuPanel({ app }: { app: App }) {
         ),
       ]);
       setScanTruncated(scanResult.truncated);
-      const pg = groupDriveByProject(scanResult.files, projectList);
+      const fileOverrides = getFeishuConfig().fileOverrides || {};
+      const pg = groupDriveByProject(scanResult.files, projectList, fileOverrides);
       const tg = groupDriveByType(scanResult.files);
       setProjectGroups(pg);
       setTypeGroups(tg);
@@ -432,6 +495,7 @@ export function FeishuPanel({ app }: { app: App }) {
                   selectedKey={selectedProject}
                   onSelect={(key) => setSelectedProject(key)}
                   onRescan={doDeepScan}
+                  useDrawer={true}
                 />
               ) : (
                 <DriveProjectList
@@ -443,6 +507,7 @@ export function FeishuPanel({ app }: { app: App }) {
                   selectedKey={selectedProject}
                   onSelect={(key) => setSelectedProject(key)}
                   onRescan={doDeepScan}
+                  useDrawer={false}
                 />
               )}
             </>
@@ -465,12 +530,20 @@ export function FeishuPanel({ app }: { app: App }) {
               onEnterFolder={enterFolder}
               onNavigateBreadcrumb={navigateBreadcrumb}
               onDelete={handleDeleteFile}
+              statsMap={statsMap}
+              statsLoading={statsLoading}
+              onLoadStats={loadStatsForFiles}
             />
           ) : (
             <DriveProjectFiles
               groups={driveViewMode === 'type' ? typeGroups : projectGroups}
               selectedKey={selectedProject}
               onDelete={handleDeleteFile}
+              onMoveFile={handleMoveFile}
+              allProjectKeys={allProjectKeys}
+              statsMap={statsMap}
+              statsLoading={statsLoading}
+              onLoadStats={loadStatsForFiles}
             />
           )}
         </div>
@@ -621,8 +694,8 @@ function DriveTree({ files, loading, folderStack, onEnterFolder, onNavigateBread
   );
 }
 
-// ===== Drive 项目列表（左栏） =====
-function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync, selectedKey, onSelect, onRescan }: {
+// ===== Drive 项目列表（左栏）— 抽屉式按系统类别分组 =====
+function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync, selectedKey, onSelect, onRescan, useDrawer = true }: {
   groups: DriveProjectGroup[];
   scanning: boolean;
   scanProgress: { scanned: number; total: number };
@@ -631,6 +704,7 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
   selectedKey: string | null;
   onSelect: (key: string) => void;
   onRescan: () => void;
+  useDrawer?: boolean;
 }) {
   const syncHint = lastSync ? (() => {
     const diff = Date.now() - new Date(lastSync).getTime();
@@ -641,6 +715,60 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
     if (hours < 24) return `${hours}小时前`;
     return `${Math.floor(hours / 24)}天前`;
   })() : null;
+
+  // 按系统类别组织分组
+  const categorizedGroups = useMemo(() => {
+    const categories: Record<string, { emoji: string; projects: DriveProjectGroup[] }> = {};
+    const unassigned: DriveProjectGroup[] = [];
+
+    // 旧缓存回退：从 PROJECT_META 查 systemType（缓存升级前的数据没有 systemType 字段）
+    const systemTypeMap = new Map<string, string>();
+    for (const [key, meta] of Object.entries(PROJECT_META)) {
+      systemTypeMap.set(key, meta.systemType);
+    }
+
+    for (const g of groups) {
+      if (g.key === '__unassigned__') {
+        unassigned.push(g);
+        continue;
+      }
+      // 优先用 group 上的 systemType，旧缓存回退到 PROJECT_META 查找
+      const cat = g.systemType || systemTypeMap.get(g.key) || '其他';
+      if (!categories[cat]) {
+        let emoji = '📁';
+        if (cat === 'AI智能体') emoji = '🧠';
+        else if (cat === 'RPA自动化') emoji = '📦';
+        else if (cat === '多维表') emoji = '📋';
+        else if (cat === '工具开发') emoji = '⚙';
+        else if (cat === '车型项目') emoji = '🚗';
+        categories[cat] = { emoji, projects: [] };
+      }
+      categories[cat].projects.push(g);
+    }
+
+    return { categories, unassigned };
+  }, [groups]);
+
+  // 抽屉展开状态
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>(() => {
+    // 默认展开第一个有项目的类别
+    const init: Record<string, boolean> = {};
+    let firstSet = false;
+    for (const cat of Object.keys(categorizedGroups.categories)) {
+      if (!firstSet && categorizedGroups.categories[cat].projects.length > 0) {
+        init[cat] = true;
+        firstSet = true;
+      } else {
+        init[cat] = false;
+      }
+    }
+    return init;
+  });
+
+  const toggleCategory = (cat: string) => {
+    setExpanded((prev) => ({ ...prev, [cat]: !prev[cat] }));
+  };
+
   if (scanning) {
     return (
       <div className="mswb-feishu-empty" style={{ padding: 12, fontSize: 12 }}>
@@ -653,6 +781,31 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
   }
 
   const totalFiles = groups.reduce((s, g) => s + g.files.length, 0);
+  const catEntries = Object.entries(categorizedGroups.categories);
+
+  // 通用视图（useDrawer=false）：扁平列表，按类型显示
+  if (!useDrawer) {
+    return (
+      <>
+        <div className="mswb-feishu-section-title">📋 通用</div>
+        <div style={{ padding: '2px 14px 6px', fontSize: 11, color: 'var(--text-faint)' }}>
+          {groups.length} 组 · {totalFiles} 文件
+          {syncHint && <span style={{ marginLeft: 4 }}>· {syncHint}</span>}
+        </div>
+        {groups.map((g) => (
+          <div
+            key={g.key}
+            className={`mswb-feishu-space-item ${selectedKey === g.key ? 'active' : ''}`}
+            onClick={() => onSelect(g.key)}
+          >
+            <span className="mswb-feishu-space-icon">{g.emoji}</span>
+            <span className="mswb-feishu-space-name">{g.name}</span>
+            <span className="mswb-badge" style={{ marginLeft: 'auto' }}>{g.files.length}</span>
+          </div>
+        ))}
+      </>
+    );
+  }
 
   return (
     <>
@@ -663,14 +816,46 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
         {truncated && <span style={{ color: 'var(--text-warning)', marginLeft: 4 }}>（已达上限）</span>}
         {totalFiles > 0 && <button className="mswb-sort-btn" style={{ marginLeft: 8, fontSize: 10, padding: '1px 6px' }} onClick={onRescan} title="重新扫描">🔄 刷新</button>}
       </div>
-      {groups.map((g) => (
+
+      {/* 抽屉式类别 */}
+      {catEntries.map(([cat, { emoji, projects }]) => {
+        const isExpanded = expanded[cat];
+        const catFileCount = projects.reduce((s, p) => s + p.files.length, 0);
+        return (
+          <div key={cat}>
+            <div
+              className="mswb-feishu-category-header"
+              onClick={() => toggleCategory(cat)}
+            >
+              <span className="mswb-feishu-category-arrow">{isExpanded ? '▼' : '▶'}</span>
+              <span className="mswb-feishu-space-icon">{emoji}</span>
+              <span className="mswb-feishu-space-name">{cat}</span>
+              <span className="mswb-badge" style={{ marginLeft: 'auto' }}>{catFileCount}</span>
+            </div>
+            {isExpanded && projects.map((g) => (
+              <div
+                key={g.key}
+                className={`mswb-feishu-space-item mswb-feishu-project-item ${selectedKey === g.key ? 'active' : ''}`}
+                onClick={() => onSelect(g.key)}
+              >
+                <span className="mswb-feishu-space-icon">{g.emoji}</span>
+                <span className="mswb-feishu-space-name">{g.name}</span>
+                <span className="mswb-badge" style={{ marginLeft: 'auto' }}>{g.files.length}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      {/* 待分配 */}
+      {categorizedGroups.unassigned.map((g) => (
         <div
           key={g.key}
           className={`mswb-feishu-space-item ${selectedKey === g.key ? 'active' : ''}`}
           onClick={() => onSelect(g.key)}
         >
-          <span className="mswb-feishu-space-icon">{g.emoji}</span>
-          <span className="mswb-feishu-space-name">{g.name}</span>
+          <span className="mswb-feishu-space-icon">📥</span>
+          <span className="mswb-feishu-space-name">待分配</span>
           <span className="mswb-badge" style={{ marginLeft: 'auto' }}>{g.files.length}</span>
         </div>
       ))}
@@ -679,10 +864,15 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
 }
 
 // ===== Drive 项目文件（右栏） =====
-function DriveProjectFiles({ groups, selectedKey, onDelete }: {
+function DriveProjectFiles({ groups, selectedKey, onDelete, onMoveFile, allProjectKeys, statsMap, statsLoading, onLoadStats }: {
   groups: DriveProjectGroup[];
   selectedKey: string | null;
   onDelete: (f: DriveFile) => void;
+  onMoveFile: (f: DriveFile, targetKey: string) => void;
+  allProjectKeys: Array<{ key: string; emoji: string; name: string }>;
+  statsMap: Map<string, StatisticsInfo>;
+  statsLoading: boolean;
+  onLoadStats: (files: DriveFile[]) => void;
 }) {
   const group = groups.find((g) => g.key === selectedKey);
 
@@ -695,6 +885,19 @@ function DriveProjectFiles({ groups, selectedKey, onDelete }: {
     );
   }
 
+  // 切换项目时触发的统计加载
+  const loadedRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const key = selectedKey || '';
+    if (group.files.length > 0 && !loadedRef.current.has(key)) {
+      loadedRef.current.add(key);
+      onLoadStats(group.files);
+    }
+  }, [selectedKey, group.files.length, onLoadStats]);
+
+  // 移动弹窗状态
+  const [movingFile, setMovingFile] = React.useState<DriveFile | null>(null);
+
   return (
     <>
       <div className="mswb-feishu-section-title">
@@ -702,22 +905,60 @@ function DriveProjectFiles({ groups, selectedKey, onDelete }: {
         <span className="mswb-badge" style={{ marginLeft: 8 }}>{group.files.length} 个文件</span>
       </div>
       <div className="mswb-feishu-doc-list">
+        {statsLoading && group.files.length > 0 && (
+          <div style={{ padding: '4px 12px', fontSize: 11, color: 'var(--text-muted)' }}>加载访问人数中...</div>
+        )}
         {[...group.files]
           .sort((a, b) => parseInt(b.createdTime || '0') - parseInt(a.createdTime || '0'))
-          .map((f) => (
-          <div key={f.token} className="mswb-feishu-doc-row">
-            <span className="mswb-feishu-doc-emoji">
-              <TypeEmoji emoji={getObjTypeEmoji(f.type)} />
-            </span>
-            <a className="mswb-feishu-doc-link" href={f.url} target="_blank" rel="noopener" title={f.name}>
-              {f.name}
-            </a>
-            <span className="mswb-feishu-doc-type">{getObjTypeLabel(f.type)}</span>
-            <span className="mswb-feishu-doc-time">{fmtTime(f.createdTime)}</span>
-            <button className="mswb-feishu-delete-btn" onClick={(e) => { e.stopPropagation(); onDelete(f); }} title="删除">🗑</button>
-          </div>
-        ))}
+          .map((f) => {
+            const stats = statsMap.get(f.token);
+            return (
+            <div key={f.token} className="mswb-feishu-doc-row">
+              <span className="mswb-feishu-doc-emoji">
+                <TypeEmoji emoji={getObjTypeEmoji(f.type)} />
+              </span>
+              <a className="mswb-feishu-doc-link" href={f.url} target="_blank" rel="noopener" title={f.name}>
+                {f.name}
+              </a>
+              <span className="mswb-feishu-doc-type">{getObjTypeLabel(f.type)}</span>
+              {stats && (
+                <span className="mswb-feishu-doc-stats" title={`访问人数: ${stats.uvCount} · 访问次数: ${stats.pvCount}`}>
+                  👁 {stats.uvCount}
+                </span>
+              )}
+              <span className="mswb-feishu-doc-time">{fmtTime(f.createdTime)}</span>
+              <button className="mswb-feishu-move-btn" onClick={(e) => { e.stopPropagation(); setMovingFile(f); }} title="移动到其他项目">↗</button>
+              <button className="mswb-feishu-delete-btn" onClick={(e) => { e.stopPropagation(); onDelete(f); }} title="删除">🗑</button>
+            </div>
+          );
+        })}
       </div>
+
+      {/* 移动弹窗 */}
+      {movingFile && (
+        <div className="mswb-feishu-move-overlay" onClick={() => setMovingFile(null)}>
+          <div className="mswb-feishu-move-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mswb-feishu-move-title">移动文件</div>
+            <div className="mswb-feishu-move-file-name">{movingFile.name}</div>
+            <div className="mswb-feishu-move-list">
+              {allProjectKeys.filter((p) => p.key !== selectedKey).map((p) => (
+                <div
+                  key={p.key}
+                  className="mswb-feishu-move-item"
+                  onClick={() => {
+                    onMoveFile(movingFile, p.key);
+                    setMovingFile(null);
+                  }}
+                >
+                  <span className="mswb-feishu-space-icon">{p.emoji}</span>
+                  <span className="mswb-feishu-space-name">{p.name}</span>
+                </div>
+              ))}
+            </div>
+            <button className="mswb-sort-btn" style={{ marginTop: 8, width: '100%' }} onClick={() => setMovingFile(null)}>取消</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -726,23 +967,36 @@ function DriveProjectFiles({ groups, selectedKey, onDelete }: {
 function fmtTime(ts: string): string {
   if (!ts) return '';
   const d = new Date(parseInt(ts) * 1000);
+  const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  return `${m}-${day}`;
+  return `${y}-${m}-${day}`;
 }
 
 // ===== Drive 右侧内容 =====
-function DriveContent({ files, loading, folderStack, onEnterFolder, onNavigateBreadcrumb, onDelete }: {
+function DriveContent({ files, loading, folderStack, onEnterFolder, onNavigateBreadcrumb, onDelete, statsMap, statsLoading, onLoadStats }: {
   files: DriveFile[];
   loading: boolean;
   folderStack: Array<{ token: string; name: string }>;
   onEnterFolder: (f: DriveFile) => void;
   onNavigateBreadcrumb: (index: number) => void;
   onDelete: (f: DriveFile) => void;
+  statsMap: Map<string, StatisticsInfo>;
+  statsLoading: boolean;
+  onLoadStats: (files: DriveFile[]) => void;
 }) {
   const docs = files
     .filter((f) => f.type !== 'folder')
     .sort((a, b) => parseInt(b.createdTime || '0') - parseInt(a.createdTime || '0'));
+
+  // 首次渲染时触发加载统计
+  const loadedRef = React.useRef(false);
+  useEffect(() => {
+    if (!loading && docs.length > 0 && !loadedRef.current) {
+      loadedRef.current = true;
+      onLoadStats(docs);
+    }
+  }, [loading, docs.length, onLoadStats]);
 
   return (
     <>
@@ -766,19 +1020,32 @@ function DriveContent({ files, loading, folderStack, onEnterFolder, onNavigateBr
         {files.length === 0 && !loading ? (
           <div className="mswb-feishu-empty">此文件夹为空</div>
         ) : (
-          docs.map((f) => (
-            <div key={f.token} className="mswb-feishu-doc-row">
-              <span className="mswb-feishu-doc-emoji">
-                <TypeEmoji emoji={getObjTypeEmoji(f.type)} />
-              </span>
-              <a className="mswb-feishu-doc-link" href={f.url} target="_blank" rel="noopener" title={`在飞书中打开: ${f.name}`}>
-                {f.name}
-              </a>
-              <span className="mswb-feishu-doc-type">{getObjTypeLabel(f.type)}</span>
-              <span className="mswb-feishu-doc-time">{fmtTime(f.createdTime)}</span>
-              <button className="mswb-feishu-delete-btn" onClick={(e) => { e.stopPropagation(); onDelete(f); }} title="删除">🗑</button>
-            </div>
-          ))
+          <>
+            {statsLoading && docs.length > 0 && (
+              <div style={{ padding: '4px 12px', fontSize: 11, color: 'var(--text-muted)' }}>加载访问人数中...</div>
+            )}
+            {docs.map((f) => {
+              const stats = statsMap.get(f.token);
+              return (
+                <div key={f.token} className="mswb-feishu-doc-row">
+                  <span className="mswb-feishu-doc-emoji">
+                    <TypeEmoji emoji={getObjTypeEmoji(f.type)} />
+                  </span>
+                  <a className="mswb-feishu-doc-link" href={f.url} target="_blank" rel="noopener" title={`在飞书中打开: ${f.name}`}>
+                    {f.name}
+                  </a>
+                  <span className="mswb-feishu-doc-type">{getObjTypeLabel(f.type)}</span>
+                  {stats && (
+                    <span className="mswb-feishu-doc-stats" title={`访问人数: ${stats.uvCount} · 访问次数: ${stats.pvCount}`}>
+                      👁 {stats.uvCount}
+                    </span>
+                  )}
+                  <span className="mswb-feishu-doc-time">{fmtTime(f.createdTime)}</span>
+                  <button className="mswb-feishu-delete-btn" onClick={(e) => { e.stopPropagation(); onDelete(f); }} title="删除">🗑</button>
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
     </>

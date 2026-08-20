@@ -9,6 +9,7 @@ import {
   type GanttPhase,
 } from '../data/ganttData';
 import { getGanttOverrides, saveGanttOverride, getProjectMetaOverrides, getConfig, getDomainIcon } from '../data/settings';
+import { PROJECT_META } from '../data/projectScanner';
 import { CreateProjectModal } from './CreateProjectModal';
 import { PhaseModal, type PhaseSubmitData } from './PhaseModal';
 import { MilestoneModal, type MilestoneSubmitData } from './MilestoneModal';
@@ -399,31 +400,29 @@ export function GanttPanel({ app }: { app: App }) {
   const handleBarMouseDown = (taskId: string, edge: 'start' | 'end', phaseId?: string) => (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // 设置 drag 状态供 CSS 高亮使用
     setDrag({ taskId, edge, phaseId });
-  };
-
-  useEffect(() => {
-    if (!drag) return;
 
     const el = barColRef.current;
     if (!el) return;
-
     const rect = el.getBoundingClientRect();
+    const totalMs = max.getTime() - min.getTime();
 
     const onMove = (e: MouseEvent) => {
       const px = Math.max(rect.left, Math.min(rect.right, e.clientX));
-      const date = pxToDate(px);
+      const pct = ((px - rect.left) / rect.width) * 100;
+      const dateMs = min.getTime() + (pct / 100) * totalMs;
+      const date = new Date(dateMs);
 
       setTasks((prev) =>
         prev.map((t) => {
-          if (t.id !== drag.taskId) return t;
-          // 阶段级拖拽
-          if (drag.phaseId && t.phases) {
+          if (t.id !== taskId) return t;
+          if (phaseId && t.phases) {
             return {
               ...t,
               phases: t.phases.map((p) => {
-                if (p.id !== drag.phaseId) return p;
-                if (drag.edge === 'start') {
+                if (p.id !== phaseId) return p;
+                if (edge === 'start') {
                   if (date >= new Date(p.end)) return p;
                   return { ...p, start: fmt(date) };
                 } else {
@@ -433,8 +432,7 @@ export function GanttPanel({ app }: { app: App }) {
               }),
             };
           }
-          // 整条级拖拽
-          if (drag.edge === 'start') {
+          if (edge === 'start') {
             if (date >= new Date(t.end)) return t;
             return { ...t, start: fmt(date) };
           } else {
@@ -446,34 +444,27 @@ export function GanttPanel({ app }: { app: App }) {
     };
 
     const onUp = () => {
-      const taskId = drag?.taskId;
-      const phaseId = drag?.phaseId;
-      if (taskId) {
-        // 用 setTasks 回调获取 React 批量处理后的最新 state（而非可能陈旧的 tasksRef）
-        setTasks((prev) => {
-          const t = prev.find((x) => x.id === taskId);
-          if (t) {
-            if (phaseId && t.phases) {
-              saveGanttOverride(t.id, { phases: t.phases });
-              syncToReadme(app, t.id, t.start, t.end, t.phases);
-            } else {
-              saveGanttOverride(t.id, { start: t.start, end: t.end });
-              syncToReadme(app, t.id, t.start, t.end);
-            }
+      setTasks((prev) => {
+        const t = prev.find((x) => x.id === taskId);
+        if (t) {
+          if (phaseId && t.phases) {
+            saveGanttOverride(t.id, { phases: t.phases });
+            syncToReadme(app, t.id, t.start, t.end, t.phases);
+          } else {
+            saveGanttOverride(t.id, { start: t.start, end: t.end });
+            syncToReadme(app, t.id, t.start, t.end);
           }
-          return prev;
-        });
-      }
+        }
+        return prev;
+      });
       setDrag(null);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
     };
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [drag, pxToDate]);
+  };
 
   // ---- 编辑进度 & 日期（内联输入） ----
   const handleFieldClick = (taskId: string, field: 'progress' | 'start' | 'end') => (e: React.MouseEvent) => {
@@ -820,7 +811,7 @@ export function GanttPanel({ app }: { app: App }) {
                     </span>
                   </div>
 
-                  <div className="mswb-gantt-bar-col" ref={barColRef}>
+                  <div className="mswb-gantt-bar-col">
                     {/* 网格线 */}
                     {monthLabels.map((_, i) => {
                       const leftPct = monthLabels

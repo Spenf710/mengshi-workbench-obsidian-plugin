@@ -18,6 +18,8 @@ export interface FeishuConfig {
   cachedTypeGroups?: any[];
   /** 缓存的智能纪要 */
   cachedMinutes?: any[];
+  /** 文件归属手动覆盖：fileToken → projectKey */
+  fileOverrides?: Record<string, string>;
 }
 
 const DEFAULT_FEISHU_CONFIG: FeishuConfig = {
@@ -36,6 +38,19 @@ export interface GanttOverride {
   milestones?: { date: string; label: string; icon?: string }[];
   phases?: { id: string; label: string; start: string; end: string; progress: number }[];
 }
+
+// ===== 会话管理配置 =====
+export interface SessionConfig {
+  /** Claude 会话根目录（默认 ~/.claude/projects），存放各 vault 的 .jsonl */
+  sessionRootDir: string;
+  /** claude CLI 路径（空 = 自动检测，loop 功能用） */
+  claudeCliPath: string;
+}
+
+const DEFAULT_SESSION_CONFIG: SessionConfig = {
+  sessionRootDir: '',
+  claudeCliPath: '',
+};
 
 export interface ProjectMetaOverride {
   systemType?: string;
@@ -60,6 +75,8 @@ export interface PluginConfig {
   baseVehicles: string[];
   /** 生长面板排除的文件夹路径（不会出现在种子浏览器中） */
   excludedFolders: string[];
+  /** 会话任务存储目录（vault 内相对路径，存放独立任务清单 md） */
+  taskStorePath: string;
 }
 
 const DEFAULT_CONFIG: PluginConfig = {
@@ -69,6 +86,7 @@ const DEFAULT_CONFIG: PluginConfig = {
   baseCategories: ['多维表', 'RPA自动化', 'AI智能体', '工具开发', '车型项目', '其他'],
   baseVehicles: ['通用', 'M18-3', 'M18-2'],
   excludedFolders: ['工作日志/', '工作周报/', 'templates/', '.obsidian/', '.claude/', '.claudian/', '.trash/'],
+  taskStorePath: '会话任务',
 };
 
 interface PluginData {
@@ -80,10 +98,17 @@ interface PluginData {
   customVehicles?: string[];
   domainIcons?: Record<string, string>;
   feishu?: FeishuConfig;
+  session?: SessionConfig;
 }
 
 export function getConfig(): PluginConfig {
   return { ...DEFAULT_CONFIG, ...dataCache.config };
+}
+
+/** 任务存储目录路径（保证非空，兜底默认值） */
+export function getTaskStorePath(): string {
+  const p = getConfig().taskStorePath;
+  return p && p.trim() ? p.trim() : '会话任务';
 }
 
 export async function setConfig(config: PluginConfig): Promise<void> {
@@ -253,5 +278,25 @@ export function getFeishuConfig(): FeishuConfig {
 
 export async function setFeishuConfig(config: Partial<FeishuConfig>): Promise<void> {
   dataCache.feishu = { ...DEFAULT_FEISHU_CONFIG, ...dataCache.feishu, ...config };
+  await persist();
+}
+
+// ===== 会话配置管理 =====
+import * as os from 'os';
+import * as path from 'path';
+
+/** 解析会话根目录：用户配置 > 默认 ~/.claude/projects */
+export function getSessionRootDir(): string {
+  const cfg = getSessionConfig();
+  if (cfg.sessionRootDir) return cfg.sessionRootDir;
+  return path.join(os.homedir(), '.claude', 'projects');
+}
+
+export function getSessionConfig(): SessionConfig {
+  return { ...DEFAULT_SESSION_CONFIG, ...dataCache.session };
+}
+
+export async function setSessionConfig(config: Partial<SessionConfig>): Promise<void> {
+  dataCache.session = { ...DEFAULT_SESSION_CONFIG, ...dataCache.session, ...config };
   await persist();
 }

@@ -635,6 +635,7 @@ export interface DriveProjectGroup {
   emoji: string;
   name: string;
   files: DriveFile[];
+  systemType?: string;
 }
 
 /** 太通用、匹配噪音大的关键词 */
@@ -689,17 +690,18 @@ export interface ProjectMapEntry {
   emoji: string;
   name: string;
   keywords: string[];
+  systemType?: string;
 }
 
-/** 合并 PROJECT_META + vault 自动扫描的项目（vault 优先，META 仅补充 emoji/name） */
+/** 合并 PROJECT_META + vault 自动扫描的项目（vault 优先，META 仅补充 emoji/name/systemType） */
 export function mergeProjectMaps(
-  metaProjects: Array<{ key: string; emoji: string; name: string }>,
-  scannedProjects: Array<{ folderName: string; name: string; emoji: string }>,
+  metaProjects: Array<{ key: string; emoji: string; name: string; systemType?: string }>,
+  scannedProjects: Array<{ folderName: string; name: string; emoji: string; systemType?: string }>,
 ): ProjectMapEntry[] {
   const map = new Map<string, ProjectMapEntry>();
-  // 先建 META 索引（查 emoji/name 用）
-  const metaIndex = new Map<string, { emoji: string; name: string }>();
-  for (const p of metaProjects) metaIndex.set(p.key, { emoji: p.emoji, name: p.name });
+  // 先建 META 索引（查 emoji/name/systemType 用）
+  const metaIndex = new Map<string, { emoji: string; name: string; systemType?: string }>();
+  for (const p of metaProjects) metaIndex.set(p.key, { emoji: p.emoji, name: p.name, systemType: p.systemType });
 
   // vault 扫描优先（只显示真实存在的文件夹）
   for (const s of scannedProjects) {
@@ -709,6 +711,7 @@ export function mergeProjectMaps(
       emoji: meta?.emoji || s.emoji,
       name: meta?.name || s.name,
       keywords: extractKeywords(meta?.name || s.name),
+      systemType: s.systemType || meta?.systemType || '其他',
     });
   }
 
@@ -836,15 +839,36 @@ export async function deepScanDriveFiles(
 }
 
 /** 按 Obsidian 项目分组所有云盘文件 */
-export function groupDriveByProject(allFiles: DriveFile[], projectList: ProjectMapEntry[]): DriveProjectGroup[] {
+export function groupDriveByProject(allFiles: DriveFile[], projectList: ProjectMapEntry[], fileOverrides?: Record<string, string>): DriveProjectGroup[] {
   const map = new Map<string, DriveFile[]>();
 
   // 初始化项目桶
   for (const proj of projectList) map.set(proj.key, []);
   for (const cat of GENERIC_CATEGORIES) map.set(cat.key, []);
 
-  // 项目视图归类：匹配项目关键词 → 否则进「其他」
+  // 项目视图归类：仅可分类文件参与项目匹配，不可分类文件直接跳过（不展示）
+  /** 是否属于可分类的文件类型：云文档(docx/doc/sheet/slides/mindnote)、多维表(bitable)、会议纪要（不含文字记录） */
+  function isClassifiable(f: DriveFile): boolean {
+    // 文字记录一律排除（名称含"文字记录"的都不进入项目视图）
+    if (/文字记录/.test(f.name)) return false;
+    const docTypes = ['docx', 'doc', 'sheet', 'slides', 'mindnote'];
+    if (docTypes.includes(f.type)) return true;
+    if (f.type === 'bitable') return true;
+    if (/智能纪要|会议|研讨|讨论/.test(f.name)) return true;
+    return false;
+  }
+
   for (const f of allFiles) {
+    // 不可分类的文件完全不进入项目视图
+    if (!isClassifiable(f)) continue;
+
+    // 用户手动覆盖优先
+    const overrideKey = fileOverrides?.[f.token];
+    if (overrideKey && map.has(overrideKey)) {
+      map.get(overrideKey)!.push(f);
+      continue;
+    }
+
     const projKey = matchFile(f.name, projectList);
     if (projKey) {
       map.get(projKey)!.push(f);
@@ -856,19 +880,64 @@ export function groupDriveByProject(allFiles: DriveFile[], projectList: ProjectM
   // 构建结果 — 所有项目都显示，即使 0 个文件
   const groups: DriveProjectGroup[] = [];
   for (const proj of projectList) {
-    groups.push({ key: proj.key, emoji: proj.emoji, name: proj.name, files: map.get(proj.key) || [] });
+    groups.push({ key: proj.key, emoji: proj.emoji, name: proj.name, files: map.get(proj.key) || [], systemType: proj.systemType });
   }
-  // 项目视图仅保留「其他」兜底
-  const otherFiles = map.get('__other__') || [];
-  if (otherFiles.length > 0) {
-    groups.push({ key: '__other__', emoji: '📁', name: '其他', files: otherFiles });
+  // 追加「待分配」分组：可分类但未匹配到任何项目的文件
+  const unassignedFiles = map.get('__other__') || [];
+  if (unassignedFiles.length > 0) {
+    groups.push({ key: '__unassigned__', emoji: '📥', name: '待分配', files: unassignedFiles });
   }
 
   groups.sort((a, b) => b.files.length - a.files.length);
   return groups;
 }
 
-// ===== 缓存管理 =====
+// ===== 文件统计信息 =====
+
+/** 文件统计信息（访问人数/次数） */
+export interface StatisticsInfo {
+  uvCount: number;  // 独立访客数
+  pvCount: number;  // 页面浏览量
+}
+
+/** 获取单个文件的统计信息（访问人数/次数） */
+export async function getFileStatistics(fileToken: string, fileType: string = 'docx'): Promise<StatisticsInfo | null> {
+  const conn = await checkConnection();
+  if (conn.status !== 'ready') return null;
+
+  const result = await execLarkCli([
+    'drive', 'file.statistics', 'get',
+    '--file-token', fileToken,
+    '--file-type', fileType,
+    '--format', 'json',
+  ]);
+
+  if (!result.ok) return null;
+
+  const stats = result.data?.statistics;
+  if (!stats) return null;
+
+  return {
+    uvCount: stats.uv ?? 0,
+    pvCount: stats.pv ?? 0,
+  };
+}
+
+/** 批量获取文件统计信息（带 200ms 节流） */
+export async function batchGetStatistics(
+  files: Array<{ token: string; type: string }>,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<Map<string, StatisticsInfo>> {
+  const map = new Map<string, StatisticsInfo>();
+  for (let i = 0; i < files.length; i++) {
+    const { token, type } = files[i];
+    const stats = await getFileStatistics(token, type);
+    if (stats) map.set(token, stats);
+    onProgress?.(i + 1, files.length);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return map;
+}
 
 export function clearAllCaches(): void {
   _connectionCache = null;

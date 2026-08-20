@@ -2011,6 +2011,38 @@
   font-weight: 500;
 }
 
+/* 抽屉式类别头 */
+.mswb-feishu-category-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-normal);
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.mswb-feishu-category-header:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-feishu-category-arrow {
+  font-size: 8px;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+/* 类别下的项目缩进 */
+.mswb-feishu-project-item {
+  padding-left: 32px !important;
+  font-size: 12px;
+}
+
 .mswb-feishu-space-icon {
   font-size: 14px;
   width: 20px;
@@ -2117,6 +2149,15 @@
   text-align: right;
 }
 
+.mswb-feishu-doc-stats {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 50px;
+  text-align: center;
+  cursor: default;
+}
+
 .mswb-feishu-delete-btn {
   flex-shrink: 0;
   background: none;
@@ -2136,6 +2177,91 @@
 .mswb-feishu-delete-btn:hover {
   opacity: 1 !important;
   background: var(--background-modifier-error);
+}
+
+/* 移动按钮 */
+.mswb-feishu-move-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.mswb-feishu-doc-row:hover .mswb-feishu-move-btn {
+  opacity: 0.5;
+}
+
+.mswb-feishu-move-btn:hover {
+  opacity: 1 !important;
+  background: var(--background-modifier-hover);
+}
+
+/* 移动弹窗遮罩 */
+.mswb-feishu-move-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 移动弹窗主体 */
+.mswb-feishu-move-modal {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 20px;
+  min-width: 280px;
+  max-width: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.mswb-feishu-move-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.mswb-feishu-move-file-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mswb-feishu-move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mswb-feishu-move-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.mswb-feishu-move-item:hover {
+  background: var(--background-modifier-hover);
 }
 
 .mswb-feishu-empty {
@@ -2612,4 +2738,562 @@
 @keyframes mswb-popup-enter {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ===== 会话面板新版：左侧菜单 + 右侧内容（仿飞书） ===== */
+
+.mswb-sessions {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--background-primary);
+}
+
+/* 顶部栏 */
+.mswb-sessions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.mswb-sessions-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.mswb-sessions-refresh-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mswb-sessions-refresh-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* 主体 */
+.mswb-sessions-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 左侧边栏 */
+.mswb-sessions-sidebar {
+  width: 240px;
+  min-width: 200px;
+  border-right: 1px solid var(--background-modifier-border);
+  overflow-y: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background-secondary);
+}
+
+/* Tab 切换 */
+.mswb-sessions-tabs {
+  display: flex;
+  padding: 8px;
+  gap: 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.mswb-sessions-tabs button {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mswb-sessions-tabs button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.mswb-sessions-tabs button.active {
+  background: var(--background-primary);
+  color: var(--interactive-accent);
+  border-color: var(--background-modifier-border);
+  font-weight: 600;
+}
+
+/* 菜单 */
+.mswb-sessions-menu {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.mswb-sessions-menu-group {
+  margin-bottom: 10px;
+}
+
+.mswb-sessions-menu-group-title {
+  padding: 6px 14px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mswb-sessions-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-normal);
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.mswb-sessions-menu-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-sessions-menu-item.active {
+  background: var(--background-primary);
+  color: var(--interactive-accent);
+  border-left: 3px solid var(--interactive-accent);
+  padding-left: 11px;
+}
+
+.mswb-sessions-menu-icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.mswb-sessions-menu-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mswb-sessions-menu-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  padding: 1px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.mswb-sessions-menu-all {
+  font-weight: 500;
+}
+
+/* 搜索框 */
+.mswb-sessions-search {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mswb-sessions-search input {
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  outline: none;
+}
+
+.mswb-sessions-search input:focus {
+  border-color: var(--interactive-accent);
+}
+
+/* 右侧内容 */
+.mswb-sessions-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.mswb-sessions-breadcrumb {
+  padding: 10px 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.mswb-sessions-breadcrumb span {
+  display: inline-block;
+}
+
+.mswb-sessions-breadcrumb-sep {
+  margin: 0 6px;
+  color: var(--text-faint);
+}
+
+.mswb-sessions-count {
+  margin-left: 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* 卡片网格 */
+.mswb-sessions-grid {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-auto-rows: auto;
+  gap: 16px;
+  align-items: stretch;
+  align-content: start;
+}
+
+/* 会话卡片 */
+.mswb-session-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--background-primary);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 130px;
+}
+
+.mswb-session-card:hover {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.mswb-session-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mswb-session-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  flex: 1;
+}
+
+.mswb-session-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mswb-session-time,
+.mswb-session-messages {
+  white-space: nowrap;
+}
+
+.mswb-session-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mswb-session-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.mswb-session-action-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.mswb-session-action-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+  background: var(--background-primary);
+}
+
+.mswb-session-badge {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 10px;
+  background: var(--background-modifier-hover);
+  white-space: nowrap;
+}
+
+.mswb-session-badge.source-at-ref { color: #2e8b57; }
+.mswb-session-badge.source-wikilink { color: #6a5acd; }
+.mswb-session-badge.source-cwd { color: var(--text-muted); }
+.mswb-session-badge.source-none { color: var(--text-faint); }
+
+.mswb-session-proj {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.mswb-session-prompt {
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 空状态 */
+.mswb-sessions-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 8px;
+  padding: 20px;
+}
+
+/* 会话详情视图 */
+.mswb-session-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mswb-session-detail-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.mswb-session-back {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+.mswb-session-back:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-session-detail-title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mswb-session-detail-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mswb-session-jumps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  flex-shrink: 0;
+}
+
+.mswb-session-jumps-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mswb-session-jump-chip {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  border-radius: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-normal);
+  min-width: 24px;
+  text-align: center;
+}
+
+.mswb-session-jump-chip:hover {
+  border-color: var(--interactive-accent);
+  color: var(--interactive-accent);
+}
+
+.mswb-session-detail-turns {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+}
+
+.mswb-turn {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.3s;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.mswb-turn-highlight {
+  background: rgba(46, 139, 87, 0.1);
+}
+
+.mswb-turn-role {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+
+.mswb-turn-user .mswb-turn-role {
+  color: #2e8b57;
+}
+
+.mswb-turn-assistant {
+  padding-left: 14px;
+  border-left: 2px solid var(--background-modifier-border);
+}
+
+.mswb-turn-assistant .mswb-turn-role {
+  color: var(--interactive-accent);
+}
+
+.mswb-turn-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mswb-turn-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mswb-turn-text a {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+}
+
+.mswb-turn-text code {
+  background: var(--background-secondary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+}
+
+.mswb-turn-block {
+  font-size: 12px;
+}
+
+.mswb-turn-block-head {
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  user-select: none;
+  font-size: 11px;
+}
+
+.mswb-turn-block-head:hover {
+  background: var(--background-modifier-hover);
+}
+
+.mswb-turn-block-body {
+  margin: 4px 0 2px 14px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mswb-turn-block-body pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
+}
+
+.mswb-turn-thinking .mswb-turn-block-head {
+  color: #9370db;
+}
+
+.mswb-turn-tool .mswb-turn-block-head {
+  color: #ff8c00;
+}
+
+.mswb-turn-result .mswb-turn-block-head {
+  color: var(--text-faint);
 }

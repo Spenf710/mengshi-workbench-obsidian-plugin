@@ -340,9 +340,11 @@ export async function scanProjects(app: App): Promise<ProjectInfo[]> {
       const liveTags = extractTags(readmeContent);
       const liveTech = extractTableField(readmeContent, '技术栈');
       const liveVehicle = extractTableField(readmeContent, '所属车型');
+      // 从 README 读取项目类型（用户可直接修改 README 二维表来更新类别）
+      const liveProjectType = extractTableField(readmeContent, '项目类型');
 
       if (meta) {
-        // 已知项目：映射表优先，README 实时覆盖
+        // 已知项目：映射表优先，README 项目类型实时覆盖
         const project: ProjectInfo = {
           folderName,
           name: getProjectDisplayName(folderName),
@@ -353,11 +355,11 @@ export async function scanProjects(app: App): Promise<ProjectInfo[]> {
           fileCount,
           lastModified,
           vehicle: meta.vehicle,
-          systemType: meta.systemType,
+          systemType: liveProjectType || meta.systemType,
           baseUrl: liveBase || getProjectUrl(folderName) || meta.baseUrl || null,
           source,
         };
-        // 应用用户覆盖（data.json > PROJECT_META）
+        // 应用用户覆盖（data.json > README 项目类型 > PROJECT_META）
         const overrides = getProjectMetaOverrides();
         const ov = overrides[folderName];
         if (ov) {
@@ -379,9 +381,9 @@ export async function scanProjects(app: App): Promise<ProjectInfo[]> {
           fileCount,
           lastModified,
           vehicle: liveVehicle || '通用',
-          systemType: liveTech
+          systemType: liveProjectType || (liveTech
             ? mapTechToSystem(liveTech)
-            : liveTags.find((t) => getAllCategories().includes(t)) || '其他',
+            : liveTags.find((t) => getAllCategories().includes(t)) || '其他'),
           baseUrl: liveBase || getProjectUrl(folderName) || null,
           source,
         };

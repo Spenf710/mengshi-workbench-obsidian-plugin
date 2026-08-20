@@ -17,7 +17,7 @@ copyStatic();
 const ctx = await esbuild.context({
   entryPoints: ['src/main.ts'],
   bundle: true,
-  external: ['obsidian', 'electron', '@codemirror/*', 'child_process'],
+  external: ['obsidian', 'electron', '@codemirror/*', 'child_process', 'fs', 'path', 'os', 'stream'],
   format: 'cjs',
   target: 'es2020',
   platform: 'browser',

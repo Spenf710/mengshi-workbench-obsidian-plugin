@@ -17,6 +17,7 @@ import { QuickTodoModal } from './QuickTodoModal';
 import { ProjectFilesModal } from './ProjectFilesModal';
 import { GanttPanel } from './GanttPanel';
 import { FeishuPanel } from './FeishuPanel';
+import { SessionsPanel } from './SessionsPanel';
 import { CreateProjectModal } from './CreateProjectModal';
 import { GANTT_DATA } from '../data/ganttData';
 import { saveProjectMeta, getGanttOverrides, addCustomCategory, addCustomVehicle, removeCustomCategory, removeCustomVehicle, getCategoryUsage, getConfig, getDomainIcon, setDomainIcon } from '../data/settings';
@@ -37,7 +38,7 @@ import {
 } from '../data/taskScanner';
 
 // ===== 常量 =====
-type TabKey = 'calendar' | 'projects' | 'todos' | 'gantt' | 'feishu';
+type TabKey = 'calendar' | 'projects' | 'todos' | 'gantt' | 'feishu' | 'sessions';
 type SortMode = 'source' | 'vehicle' | 'system';
 
 const TABS = [
@@ -46,6 +47,7 @@ const TABS = [
   { key: 'todos' as const, label: '待办', icon: '✅' },
   { key: 'gantt' as const, label: '排期', icon: '📊' },
   { key: 'feishu' as const, label: '飞书', icon: '📡' },
+  { key: 'sessions' as const, label: '会话', icon: '💬' },
 ];
 
 // ===== 日期格式化 =====
@@ -80,6 +82,7 @@ export function WorkbenchApp({ app }: { app: App }) {
         {activeTab === 'todos' && <div key={`todo-${refreshKey}`} style={{height:'100%'}}><TodosPanel app={app} /></div>}
         {activeTab === 'gantt' && <div key={`gantt-${refreshKey}`} style={{height:'100%'}}><GanttPanel app={app} /></div>}
         {activeTab === 'feishu' && <div key={`feishu-${refreshKey}`} style={{height:'100%'}}><FeishuPanel app={app} /></div>}
+        {activeTab === 'sessions' && <div key={`sess-${refreshKey}`} style={{height:'100%'}}><SessionsPanel app={app} /></div>}
       </div>
 
       {/* 快捷录入按钮 */}

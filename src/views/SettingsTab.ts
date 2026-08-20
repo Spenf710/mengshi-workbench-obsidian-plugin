@@ -5,6 +5,8 @@ import {
   setConfig,
   resetConfig,
   type PluginConfig,
+  getSessionConfig,
+  setSessionConfig,
 } from '../data/settings';
 
 export class WorkbenchSettingsTab extends PluginSettingTab {
@@ -131,6 +133,49 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           this.renderList(vehContainer, this.config.baseVehicles, (v) => { this.config.baseVehicles = v; });
         }
       }));
+
+    // ===== Claude 会话 =====
+    containerEl.createEl('h3', { text: '💬 Claude 会话' });
+    containerEl.createEl('p', {
+      text: '会话记录由 Claude Code 写入 ~/.claude/projects/，每个 vault 对应一个编码后的子目录。留空使用默认值。',
+      cls: 'setting-item-description',
+    });
+
+    const sessionCfg = { ...getSessionConfig() };
+    const sessionText: any = {};
+
+    new Setting(containerEl)
+      .setName('Claude 会话目录')
+      .setDesc('存放会话 .jsonl 的根目录，默认 ~/.claude/projects')
+      .addText((t) => {
+        t.setValue(sessionCfg.sessionRootDir)
+          .setPlaceholder('C:\\Users\\xxx\\.claude\\projects')
+          .onChange((v) => { sessionText.sessionRootDir = v; });
+        sessionText._sessionRootInput = t;
+      });
+
+    new Setting(containerEl)
+      .setName('claude CLI 路径')
+      .setDesc('loop 起新会话用，留空 = 自动检测')
+      .addText((t) => {
+        t.setValue(sessionCfg.claudeCliPath)
+          .setPlaceholder('claude')
+          .onChange((v) => { sessionText.claudeCliPath = v; });
+      });
+
+    new Setting(containerEl)
+      .setName('保存会话配置')
+      .setDesc('立即生效，下次打开会话 Tab 即按新路径扫描')
+      .addButton((b) => b
+        .setButtonText('💾 保存会话配置')
+        .setCta()
+        .onClick(async () => {
+          await setSessionConfig({
+            sessionRootDir: sessionText.sessionRootDir ?? '',
+            claudeCliPath: sessionText.claudeCliPath ?? '',
+          });
+          this.display();
+        }));
 
     // ===== 操作按钮 =====
     containerEl.createEl('h3', { text: '⚙ 操作' });
