@@ -17,36 +17,150 @@ import { scanProjects, type ProjectInfo } from '../data/projectScanner';
 
 // ===== 类型 =====
 type SidebarTab = 'projects' | 'general';
-type FilterKey = 'all' | 'today' | 'week' | 'none';
+type FilterKey = 'all' | 'today' | 'threeDays' | 'week';
 
 interface MenuGroup {
   root: string;
   projects: ProjectInfo[];
 }
 
-// ===== Markdown 轻量渲染（仅用户输入的安全文本） =====
+// ===== Markdown 完整渲染（支持代码块、表格、标题、列表等） =====
 function mdRender(text: string): string {
   if (!text) return '';
+  // 先 HTML 转义
   const esc = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  return esc
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/^- \[ \] /gm, '☐ ')
-    .replace(/^- \[x\] /gim, '☑ ')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-    .replace(/\n/g, '<br>');
+  // 按行处理，逐行渲染
+  const lines = esc.split('\n');
+  const out: string[] = [];
+  let inCodeBlock = false;
+  let codeLang = '';
+  let codeBuf: string[] = [];
+  let inTable = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 代码块 ``` 开关
+    if (/^```/.test(line)) {
+      if (inCodeBlock) {
+        out.push(`<pre><code${codeLang ? ` class="language-${codeLang}"` : ''}>${codeBuf.join('\n')}</code></pre>`);
+        codeBuf = [];
+        inCodeBlock = false;
+        codeLang = '';
+      } else {
+        inCodeBlock = true;
+        codeLang = line.replace(/^```/, '').trim();
+      }
+      continue;
+    }
+    if (inCodeBlock) { codeBuf.push(line); continue; }
+
+    // 空行重置表格状态
+    if (!line.trim()) { if (inTable) { inTable = false; } out.push(''); continue; }
+
+    // 表格行：| 内容 | 内容 |
+    if (/^\|.+\|$/.test(line.trim())) {
+      if (!inTable) {
+        inTable = true;
+        out.push('<table>');
+      }
+      // 分隔行 |-|-| 跳过
+      if (/^\|[\s\-:]+\|$/.test(line.trim())) continue;
+      const cells = line.split('|').filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+      // 判断是否是表头（上一行是分隔行，或者第一行）
+      const prevLine = i > 0 ? lines[i - 1] : '';
+      const isHeader = inTable && prevLine.trim().startsWith('|') && /^\|[\s\-:]+\|$/.test(lines[i + 1]?.trim() || '');
+      const tag = isHeader ? 'th' : 'td';
+      out.push(`<tr>${cells.map((c) => `<${tag}>${inlineMd(c.trim())}</${tag}>`).join('')}</tr>`);
+      continue;
+    } else if (inTable) {
+      inTable = false;
+      out.push('</table>');
+    }
+
+    // 普通行：行内渲染，用 <p> 包裹
+    if (line.trim()) {
+      const rendered = inlineMd(line);
+      if (/^<(h[1-6]|blockquote|hr)/.test(rendered)) {
+        out.push(rendered);
+      } else if (/^<li>/.test(rendered)) {
+        // 收集连续的 <li>，包装为 <ul>
+        const listItems = [rendered];
+        while (i + 1 < lines.length) {
+          const nextLine = lines[i + 1].trim();
+          if (!nextLine) break;
+          const nextRendered = inlineMd(lines[i + 1]);
+          if (/^<li>/.test(nextRendered)) {
+            listItems.push(nextRendered);
+            i++;
+          } else break;
+        }
+        out.push(`<ul>${listItems.join('')}</ul>`);
+      } else {
+        out.push(`<p>${rendered}</p>`);
+      }
+    }
+  }
+
+  // 关闭未闭合的代码块
+  if (inCodeBlock) {
+    out.push(`<pre><code${codeLang ? ` class="language-${codeLang}"` : ''}>${codeBuf.join('\n')}</code></pre>`);
+  }
+  if (inTable) out.push('</table>');
+
+  return out.join('\n');
+}
+
+/** 行内 Markdown 渲染（单行，不含块级元素） */
+function inlineMd(text: string): string {
+  let s = text;
+
+  // 标题 # ## ###
+  s = s.replace(/^(#{1,6})\s+(.+)$/gm, (_, hashes, content) => {
+    const level = hashes.length;
+    return `<h${level}>${content}</h${level}>`;
+  });
+
+  // 无序列表 - 或 *
+  s = s.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li>$1</li>');
+  // 有序列表 1. 2.
+  s = s.replace(/^[\s]*\d+\.\s+(.+)$/gm, '<li>$1</li>');
+
+  // 引用 >
+  s = s.replace(/^&gt;\s*(.*)$/gm, '<blockquote>$1</blockquote>');
+
+  // 分隔线 ---
+  if (/^-{3,}$/.test(s.trim())) s = '<hr>';
+
+  // 复选框
+  s = s.replace(/^- \[ \] /gm, '☐ ');
+  s = s.replace(/^- \[x\] /gim, '☑ ');
+
+  // 链接 [text](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // 粗体 + 斜体 ***
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  // 粗体 **
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // 斜体 *
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // 行内代码 `
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  return s;
 }
 
 // ===== 轮次内容块 =====
-function BlockView({ block }: { block: TurnBlock }) {
+function BlockView({ block, isAssistant }: { block: TurnBlock; isAssistant?: boolean }) {
   const [open, setOpen] = useState(false);
 
   if (block.kind === 'text') {
-    return <div className="mswb-turn-text" dangerouslySetInnerHTML={{ __html: mdRender(block.content) }} />;
+    return <div className={`mswb-turn-text${isAssistant ? ' mswb-turn-text-final' : ''}`} dangerouslySetInnerHTML={{ __html: mdRender(block.content) }} />;
   }
   if (block.kind === 'thinking') {
     return (
@@ -117,7 +231,7 @@ function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: Session
         >
           在 Claude 中打开
         </button>
-        <span className="mswb-session-detail-meta">{detail.turns.length} 轮 · {timeLabel}</span>
+        <span className="mswb-session-detail-meta">{detail.userPrompts.length} 轮提问 · {detail.turns.length} 条消息 · {timeLabel}</span>
       </div>
 
       {detail.userPrompts.length > 0 && (
@@ -132,18 +246,22 @@ function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: Session
       )}
 
       <div className="mswb-session-detail-turns">
-        {detail.turns.map((turn, i) => (
+        {detail.turns.map((turn, i) => {
+          // 每个 assistant 轮次都是该轮对话的最终输出
+          const isFinalOutput = turn.role === 'assistant';
+          return (
           <div
             key={i}
             ref={(el) => { turnRefs.current[turn.lineIndex] = el; }}
             className={`mswb-turn mswb-turn-${turn.role}`}
           >
-            <div className="mswb-turn-role">{turn.role === 'user' ? '🧑 用户' : '🤖 Claude'}</div>
+            <div className="mswb-turn-role">{turn.role === 'user' ? '🧑 用户' : turn.role === 'tool' ? '⚙ 系统' : '🤖 Claude'}</div>
             <div className="mswb-turn-blocks">
-              {turn.blocks.map((b, j) => <BlockView key={j} block={b} />)}
+              {turn.blocks.map((b, j) => <BlockView key={j} block={b} isAssistant={turn.role === 'assistant'} />)}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -176,7 +294,7 @@ function SessionCardView({ card, onOpen, onOpenInClaude }: { card: SessionCard; 
       </div>
       <div className="mswb-session-meta-row" onClick={() => onOpen(card)}>
         <span className="mswb-session-time">{timeLabel}</span>
-        <span className="mswb-session-messages">{card.userTurns} 轮对话 · {card.apiCalls} 次调用</span>
+        <span className="mswb-session-messages">{card.userTurns} 轮提问 · {card.toolCalls} 次工具调用</span>
       </div>
       <div className="mswb-session-sub">
         <span className={`mswb-session-badge source-${card.projectRef.source}`}>
@@ -295,19 +413,21 @@ export function SessionsPanel({ app }: { app: App }) {
         list = list.filter((s) => s.projectRef.projectPath === selectedProject);
       }
       if (selectedFilter === 'none') {
-        list = list.filter((s) => s.projectRef.source === 'none');
+        list = list.filter((s) => s.projectRef.projectPath === null);
       }
     } else {
       // 通用 Tab
       if (selectedFilter === 'today') {
         const today = new Date().toISOString().slice(0, 10);
         list = list.filter((s) => s.lastTime?.startsWith(today));
+      } else if (selectedFilter === 'threeDays') {
+        const now = new Date();
+        const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+        list = list.filter((s) => s.lastTime >= threeDaysAgo);
       } else if (selectedFilter === 'week') {
         const now = new Date();
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
         list = list.filter((s) => s.lastTime >= weekAgo);
-      } else if (selectedFilter === 'none') {
-        list = list.filter((s) => s.projectRef.source === 'none');
       }
     }
     if (search.trim()) {
@@ -325,14 +445,14 @@ export function SessionsPanel({ app }: { app: App }) {
       return '全部会话';
     }
     if (selectedFilter === 'today') return '今日会话';
+    if (selectedFilter === 'threeDays') return '近三日会话';
     if (selectedFilter === 'week') return '本周会话';
-    if (selectedFilter === 'none') return '未归类会话';
     return '全部会话';
   }, [activeSidebarTab, selectedProject, selectedFilter]);
 
   // 左侧菜单项渲染
   const projectCount = (path: string | null) => {
-    if (!path) return sessions.filter((s) => s.projectRef.source === 'none').length;
+    if (!path) return sessions.filter((s) => s.projectRef.projectPath === null).length;
     return sessions.filter((s) => s.projectRef.projectPath === path).length;
   };
 
@@ -460,9 +580,9 @@ export function SessionsPanel({ app }: { app: App }) {
                   <div className="mswb-sessions-menu-group">
                     {[
                       { key: 'all', icon: '📆', label: '全部' },
-                      { key: 'today', icon: '', label: '今日' },
+                      { key: 'today', icon: '📅', label: '今日' },
+                      { key: 'threeDays', icon: '📅', label: '近三日' },
                       { key: 'week', icon: '📅', label: '本周' },
-                      { key: 'none', icon: '🗂️', label: '未归类' },
                     ].map((item) => (
                       <div
                         key={item.key}

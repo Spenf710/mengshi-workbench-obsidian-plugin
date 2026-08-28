@@ -33,10 +33,10 @@ export interface SessionCard {
   startTime: string;
   /** 会话最后活动时间 ISO */
   lastTime: string;
-  /** 用户提问轮次数 */
+  /** 用户真实提问轮次数（排除 tool_result 回传） */
   userTurns: number;
-  /** API / 工具调用次数（assistant + tool_use + tool_result） */
-  apiCalls: number;
+  /** 工具调用次数（tool_use 块数） */
+  toolCalls: number;
   /** 工作目录 */
   cwd: string;
   /** 项目归属（三线索交叉） */
@@ -67,6 +67,20 @@ export function encodeVaultPath(vaultPath: string): string {
 
 // ===== 文本提取 =====
 
+/** 判断 user 消息是否是纯 tool_result 回传（非人的实际输入） */
+function isToolResultTurn(content: unknown): boolean {
+  if (Array.isArray(content)) {
+    return content.length > 0 && content.every((b: any) => b?.type === 'tool_result');
+  }
+  return false;
+}
+
+/** 判断 user 消息是否是系统自动注入（非人的实际输入）
+ *  真实用户输入 content 是纯字符串，系统注入 content 是数组 */
+function isSystemInjected(obj: any): boolean {
+  return Array.isArray(obj.message?.content) && !isToolResultTurn(obj.message?.content);
+}
+
 /** 从一行 message.content 提取纯文本（user 是字符串，assistant 是 block 数组） */
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -92,24 +106,55 @@ export function extractProjectRef(
   textChunks: string[],
   knownProjectPaths: string[],
   cwd: string,
+  aiTitle?: string,
 ): ProjectRef {
   const joined = textChunks.join('\n');
 
-  // 线索1：@文件引用 — 形如 @项目管理-系统/8.xxx/ 或 @项目管理-系统/8.xxx/file.md
+  // 线索1：@文件引用
   const atRefs = [...joined.matchAll(/@([^\s,，()（）]+[^\s,，()（）.]*\.?(?:md)?)/g)].map((m) => m[1]);
   for (const ref of atRefs) {
     const hit = knownProjectPaths.find((p) => ref.startsWith(p) || ref.startsWith(p + '/'));
     if (hit) return { projectPath: hit, source: 'at-ref', evidence: `@${ref}` };
   }
 
-  // 线索2：[[链接]] — 链接目标可能含项目路径，或在 knownProjectPaths 下
+  // 线索2：[[链接]]
   const wiki = [...joined.matchAll(/\[\[([^\]]+)\]\]/g)].map((m) => m[1].split('|')[0]);
   for (const link of wiki) {
     const hit = knownProjectPaths.find((p) => link.startsWith(p) || link.startsWith(p + '/'));
     if (hit) return { projectPath: hit, source: 'wikilink', evidence: `[[${link}]]` };
   }
 
-  // 线索3：cwd 兜底 — 非空但无法精确到项目，标 cwd 命中但 projectPath=null
+  // 线索3：aiTitle / firstPrompt 语义匹配项目名
+  // 提取每个项目的"核心名"（去掉数字前缀和通用后缀）
+  const projectNameMap = new Map<string, { core: string; path: string }>();
+  for (const p of knownProjectPaths) {
+    const segments = p.split('/');
+    const folderName = segments[segments.length - 1];
+    const fullName = folderName.replace(/^\d+\.\s*/, '');
+    // 核心名：去掉常见后缀词
+    const core = fullName.replace(/(?:插件|系统|平台|工具|面板|模块|引擎|管理|助手|项目|开发|重构|自动化|智能体)$/, '');
+    projectNameMap.set(fullName, { core: core || fullName, path: p });
+  }
+
+  // 用 aiTitle 和 firstPrompt 分别匹配
+  const matchTexts = [aiTitle || '', textChunks[0] || ''].filter(Boolean);
+  for (const text of matchTexts) {
+    if (!text) continue;
+    // 先试完整项目名匹配
+    for (const [fullName, { path: p }] of projectNameMap) {
+      if (text.includes(fullName)) {
+        return { projectPath: p, source: 'at-ref', evidence: `标题匹配「${fullName}」` };
+      }
+    }
+    // 再试核心名匹配（排除过于短的核心名避免误匹配）
+    for (const [fullName, { core, path: p }] of projectNameMap) {
+      if (core.length >= 3 && text.includes(core)) {
+        return { projectPath: p, source: 'at-ref', evidence: `标题匹配「${core}」` };
+      }
+    }
+  }
+
+  // 线索4：cwd 兜底
   if (cwd) return { projectPath: null, source: 'cwd', evidence: cwd };
 
   return { projectPath: null, source: 'none', evidence: '' };
@@ -123,7 +168,7 @@ export interface SessionRaw {
   startTime: string;
   lastTime: string;
   userTurns: number;
-  apiCalls: number;
+  toolCalls: number;
   cwd: string;
   textChunks: string[];
 }
@@ -136,7 +181,7 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
     let startTime = '';
     let lastTime = '';
     let userTurns = 0;
-    let apiCalls = 0;
+    let toolCalls = 0;
     let cwd = '';
     let firstUserFound = false;
     const textChunks: string[] = [];
@@ -165,20 +210,26 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
         if (obj.cwd && !cwd) cwd = obj.cwd;
         if (t === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle as string;
         if (t === 'user') {
-          userTurns++;
-          const text = extractText(obj.message?.content);
-          if (text) {
-            textChunks.push(text);
-            if (!firstUserFound) {
-              firstPrompt = text.slice(0, 200);
-              firstUserFound = true;
+          // 跳过纯 tool_result 回传 + 系统注入的 skill/指令消息
+          if (!isToolResultTurn(obj.message?.content) && !isSystemInjected(obj)) {
+            userTurns++;
+            const text = extractText(obj.message?.content);
+            if (text) {
+              textChunks.push(text);
+              if (!firstUserFound) {
+                firstPrompt = text.slice(0, 200);
+                firstUserFound = true;
+              }
             }
           }
         } else if (t === 'assistant') {
-          // assistant 行包含文本/思考/工具调用/工具结果；每条 assistant 消息计为一次 API 调用
-          apiCalls++;
-          const text = extractText(obj.message?.content);
-          if (text) textChunks.push(text);
+          // 统计 tool_use 块数 = 真实工具调用次数
+          const content = obj.message?.content;
+          if (Array.isArray(content)) {
+            for (const b of content) {
+              if (b?.type === 'tool_use') toolCalls++;
+            }
+          }
         }
       }
     });
@@ -192,7 +243,7 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
           /* ignore */
         }
       }
-      resolve({ aiTitle, firstPrompt, startTime, lastTime, userTurns, apiCalls, cwd, textChunks });
+      resolve({ aiTitle, firstPrompt, startTime, lastTime, userTurns, toolCalls, cwd, textChunks });
     });
 
     stream.on('error', () => resolve(null));
@@ -210,7 +261,7 @@ export interface TurnBlock {
 }
 
 export interface SessionTurn {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   /** 该轮的有序内容块（text/thinking/tool_use/tool_result 分离展示） */
   blocks: TurnBlock[];
   timestamp: string;
@@ -295,12 +346,17 @@ export async function parseSessionTurns(filePath: string): Promise<SessionDetail
         if (t === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle;
         if (t === 'user') {
           const blocks = parseBlocks(obj.message?.content);
-          // 仅当一行完全无实质块（如空 content）时跳过
+          // 纯 tool_result 回传 → 标记为 tool 角色
+          const isToolOnly = blocks.length > 0 && blocks.every((b) => b.kind === 'tool_result');
+          // 系统注入（parentUuid 有值）→ 标记为 tool 角色
+          const isSystem = isSystemInjected(obj);
           if (blocks.length) {
-            turns.push({ role: t, blocks, timestamp: ts || '', lineIndex: currentLine });
-            const textBlock = blocks.find((b) => b.kind === 'text');
-            if (textBlock) {
-              userPrompts.push({ lineIndex: currentLine, text: textBlock.content.slice(0, 100) });
+            turns.push({ role: isToolOnly || isSystem ? 'tool' : 'user', blocks, timestamp: ts || '', lineIndex: currentLine });
+            if (!isToolOnly && !isSystem) {
+              const textBlock = blocks.find((b) => b.kind === 'text');
+              if (textBlock) {
+                userPrompts.push({ lineIndex: currentLine, text: textBlock.content.slice(0, 100) });
+              }
             }
           }
         } else if (t === 'assistant') {
@@ -353,7 +409,7 @@ export async function scanSessions(
       const raw = await parseSessionFile(filePath);
       if (!raw) return null;
       const sessionId = f.replace(/\.jsonl$/, '');
-      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd);
+      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
       const card: SessionCard = {
         sessionId,
         aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
@@ -361,7 +417,7 @@ export async function scanSessions(
         startTime: raw.startTime,
         lastTime: raw.lastTime,
         userTurns: raw.userTurns,
-        apiCalls: raw.apiCalls,
+        toolCalls: raw.toolCalls,
         cwd: raw.cwd,
         projectRef,
         filePath,
@@ -414,7 +470,7 @@ export async function scanSessionsFallback(
       const raw = await parseSessionFile(filePath);
       if (!raw) { extraFailed++; continue; }
       if (!raw.cwd.includes(vaultPath)) continue; // 只保留 cwd 匹配当前 vault 的
-      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd);
+      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
       extra.push({
         sessionId: f.replace(/\.jsonl$/, ''),
         aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
@@ -422,7 +478,7 @@ export async function scanSessionsFallback(
         startTime: raw.startTime,
         lastTime: raw.lastTime,
         userTurns: raw.userTurns,
-        apiCalls: raw.apiCalls,
+        toolCalls: raw.toolCalls,
         cwd: raw.cwd,
         projectRef,
         filePath,
@@ -460,7 +516,7 @@ export async function scanAllSessions(
       const filePath = path.join(dirPath, f);
       const raw = await parseSessionFile(filePath);
       if (!raw) { failed++; continue; }
-      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd);
+      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
       sessions.push({
         sessionId: f.replace(/\.jsonl$/, ''),
         aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
@@ -468,7 +524,7 @@ export async function scanAllSessions(
         startTime: raw.startTime,
         lastTime: raw.lastTime,
         userTurns: raw.userTurns,
-        apiCalls: raw.apiCalls,
+        toolCalls: raw.toolCalls,
         cwd: raw.cwd,
         projectRef,
         filePath,
