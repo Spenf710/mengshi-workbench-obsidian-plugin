@@ -7,6 +7,8 @@ import {
   type PluginConfig,
   getSessionConfig,
   setSessionConfig,
+  getFeishuConfig,
+  setFeishuConfig,
 } from '../data/settings';
 
 export class WorkbenchSettingsTab extends PluginSettingTab {
@@ -18,14 +20,14 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
   }
 
   display(): void {
-    this.config = { ...getConfig() }; // 每次打开刷新
+    this.config = { ...getConfig() };
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: '猛士驾驶舱 — 设置' });
+    containerEl.createEl('h2', { text: '猛士驾驶舱 设置' });
 
     // ===== 基础路径 =====
-    containerEl.createEl('h3', { text: '📂 基础路径' });
+    containerEl.createEl('h3', { text: '📁 基础路径' });
 
     new Setting(containerEl)
       .setName('工作日志目录')
@@ -43,16 +45,8 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           .setPlaceholder('templates/工作日志.md')
           .onChange((v) => this.config.diaryTemplate = v));
 
-    // ===== 项目根目录 =====
-    containerEl.createEl('h3', { text: '📁 项目根目录' });
-    containerEl.createEl('p', { text: '插件会扫描这些目录下的子文件夹作为项目', cls: 'setting-item-description' });
-
-    const rootsContainer = containerEl.createDiv();
-    this.renderRoots(rootsContainer);
-
     new Setting(containerEl)
-      .setName('添加项目根目录')
-      .setDesc('输入路径后回车或点 +')
+      .setName('项目根目录')
       .addText((t) => {
         t.setPlaceholder('例: 项目管理-客户');
         t.inputEl.addEventListener('keydown', (e) => {
@@ -72,16 +66,14 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
         }
       }));
 
-    // ===== 默认类别 =====
-    containerEl.createEl('h3', { text: '🏷️ 默认类别' });
+    const rootsContainer = containerEl.createDiv();
+    this.renderRoots(rootsContainer);
 
-    const catContainer = containerEl.createDiv();
-    this.renderList(catContainer, this.config.baseCategories, (v) => {
-      this.config.baseCategories = v;
-    });
+    // ===== 类别与车型 =====
+    containerEl.createEl('h3', { text: '🏷️ 类别与标签' });
 
     new Setting(containerEl)
-      .setName('添加默认类别')
+      .setName('默认类别')
       .addText((t) => {
         t.setPlaceholder('新类别名');
         t.inputEl.addEventListener('keydown', (e) => {
@@ -103,102 +95,128 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
         }
       }));
 
-    // ===== 默认车型 =====
-    containerEl.createEl('h3', { text: '🚗 默认车型' });
-
-    const vehContainer = containerEl.createDiv();
-    this.renderList(vehContainer, this.config.baseVehicles, (v) => {
-      this.config.baseVehicles = v;
-    });
+    const catContainer = containerEl.createDiv();
+    this.renderList(catContainer, this.config.baseCategories, (v) => { this.config.baseCategories = v; });
 
     new Setting(containerEl)
-      .setName('添加默认车型')
+      .setName('默认标签')
       .addText((t) => {
-        t.setPlaceholder('新车型名');
+        t.setPlaceholder('新标签名');
         t.inputEl.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' && t.getValue().trim()) {
-            if (!this.config.baseVehicles.includes(t.getValue().trim())) {
-              this.config.baseVehicles.push(t.getValue().trim());
+            if (!this.config.baseTags.includes(t.getValue().trim())) {
+              this.config.baseTags.push(t.getValue().trim());
               t.setValue('');
-              this.renderList(vehContainer, this.config.baseVehicles, (v) => { this.config.baseVehicles = v; });
+              this.renderList(tagContainer, this.config.baseTags, (v) => { this.config.baseTags = v; });
             }
           }
         });
       })
       .addButton((b) => b.setButtonText('+').onClick(() => {
-        const input = containerEl.querySelector('input[placeholder="新车型名"]') as HTMLInputElement;
-        if (input && input.value.trim() && !this.config.baseVehicles.includes(input.value.trim())) {
-          this.config.baseVehicles.push(input.value.trim());
+        const input = containerEl.querySelector('input[placeholder="新标签名"]') as HTMLInputElement;
+        if (input && input.value.trim() && !this.config.baseTags.includes(input.value.trim())) {
+          this.config.baseTags.push(input.value.trim());
           input.value = '';
-          this.renderList(vehContainer, this.config.baseVehicles, (v) => { this.config.baseVehicles = v; });
+          this.renderList(tagContainer, this.config.baseTags, (v) => { this.config.baseTags = v; });
         }
       }));
 
-    // ===== Claude 会话 =====
-    containerEl.createEl('h3', { text: '💬 Claude 会话' });
-    containerEl.createEl('p', {
-      text: '会话记录由 Claude Code 写入 ~/.claude/projects/，每个 vault 对应一个编码后的子目录。留空使用默认值。',
-      cls: 'setting-item-description',
-    });
+    const tagContainer = containerEl.createDiv();
+    this.renderList(tagContainer, this.config.baseTags, (v) => { this.config.baseTags = v; });
 
+    // ===== Tab 页配置 =====
+    containerEl.createEl('h3', { text: '📑 Tab 页' });
+
+    const TAB_LABELS: Record<string, string> = {
+      calendar: '📅 日历',
+      projects: '📂 项目',
+      todos: '✅ 待办',
+      gantt: '📊 排期',
+      feishu: '📡 飞书',
+      sessions: '💬 会话',
+    };
+
+    for (const [key, label] of Object.entries(TAB_LABELS)) {
+      const isVisible = this.config.visibleTabs?.[key] !== false;
+      new Setting(containerEl)
+        .setName(label)
+        .addToggle((t) => t.setValue(isVisible).onChange((v) => {
+          if (!this.config.visibleTabs) this.config.visibleTabs = {};
+          this.config.visibleTabs[key] = v;
+        }));
+    }
+
+    // ===== Claude 会话 =====
     const sessionCfg = { ...getSessionConfig() };
     const sessionText: any = {};
 
+    containerEl.createEl('h3', { text: '💬 Claude 会话' });
+
     new Setting(containerEl)
-      .setName('Claude 会话目录')
-      .setDesc('存放会话 .jsonl 的根目录，默认 ~/.claude/projects')
+      .setName('会话目录')
+      .setDesc('会话 .jsonl 根目录，默认 ~/.claude/projects')
       .addText((t) => {
         t.setValue(sessionCfg.sessionRootDir)
           .setPlaceholder('C:\\Users\\xxx\\.claude\\projects')
           .onChange((v) => { sessionText.sessionRootDir = v; });
-        sessionText._sessionRootInput = t;
       });
 
     new Setting(containerEl)
       .setName('claude CLI 路径')
-      .setDesc('loop 起新会话用，留空 = 自动检测')
+      .setDesc('loop 起新会话用，留空自动检测')
       .addText((t) => {
         t.setValue(sessionCfg.claudeCliPath)
           .setPlaceholder('claude')
           .onChange((v) => { sessionText.claudeCliPath = v; });
       });
 
+    // ===== 飞书 =====
+    const feishuCfg = { ...getFeishuConfig() };
+    const feishuText: any = {};
+
+    containerEl.createEl('h3', { text: '📡 飞书' });
+
     new Setting(containerEl)
-      .setName('保存会话配置')
-      .setDesc('立即生效，下次打开会话 Tab 即按新路径扫描')
-      .addButton((b) => b
-        .setButtonText('💾 保存会话配置')
-        .setCta()
-        .onClick(async () => {
-          await setSessionConfig({
-            sessionRootDir: sessionText.sessionRootDir ?? '',
-            claudeCliPath: sessionText.claudeCliPath ?? '',
-          });
-          this.display();
-        }));
+      .setName('lark-cli 路径')
+      .setDesc('留空自动检测，失败时手动指定')
+      .addText((t) => {
+        t.setValue(feishuCfg.larkCliPath)
+          .setPlaceholder('留空自动检测')
+          .onChange((v) => { feishuText.larkCliPath = v; });
+      });
 
     // ===== 操作按钮 =====
-    containerEl.createEl('h3', { text: '⚙ 操作' });
+    containerEl.createEl('hr');
 
     new Setting(containerEl)
       .setName('保存设置')
-      .setDesc('保存后需要重载插件才能完全生效')
+      .setDesc('所有改动一次性保存，需重载插件完全生效')
       .addButton((b) => b
         .setButtonText('💾 保存')
         .setCta()
         .onClick(async () => {
           await setConfig(this.config);
+          await setSessionConfig({
+            sessionRootDir: sessionText.sessionRootDir ?? '',
+            claudeCliPath: sessionText.claudeCliPath ?? '',
+          });
+          await setFeishuConfig({
+            larkCliPath: feishuText.larkCliPath ?? '',
+          });
           this.config = { ...getConfig() };
+          this.display();
         }));
 
     new Setting(containerEl)
-      .setName('恢复默认设置')
+      .setName('恢复默认')
       .setDesc('将所有配置恢复为默认值')
       .addButton((b) => b
         .setButtonText('🔄 恢复默认')
         .setWarning()
         .onClick(async () => {
           await resetConfig();
+          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '' });
+          await setFeishuConfig({ larkCliPath: '' });
           this.config = { ...getConfig() };
           this.display();
         }));
@@ -207,7 +225,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
   private renderRoots(container: HTMLElement): void {
     container.empty();
     if (this.config.projectRoots.length === 0) {
-      container.createEl('p', { text: '（无，将使用默认值：项目管理-系统、项目管理-车型）', cls: 'setting-item-description' });
+      container.createEl('p', { text: '（无）', cls: 'setting-item-description' });
       return;
     }
     for (let i = 0; i < this.config.projectRoots.length; i++) {

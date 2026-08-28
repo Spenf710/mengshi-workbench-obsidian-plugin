@@ -1,10 +1,10 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
-import { saveGanttOverride, getAllCategories, getAllVehicles, getConfig, setConfig, addCustomCategory, addCustomVehicle } from '../data/settings';
+import { saveGanttOverride, getAllCategories, getAllTags, getConfig, setConfig, addCustomCategory, addCustomTag } from '../data/settings';
 import { addWorkingDays } from '../data/dateUtils';
 
 export class CreateProjectModal extends Modal {
   private name = '';
-  private vehicle = '通用';
+  private tag = '通用';
   private category = '其他';
   private root = '';
   private purpose = '';
@@ -45,10 +45,10 @@ export class CreateProjectModal extends Modal {
     this.makeField(r1, '项目名称', t => { t.placeholder = '例：XX管理系统'; t.onChange(v => this.name = v); });
     this.makeField(r1, '项目目的', t => { t.placeholder = '解决什么问题...'; t.onChange(v => this.purpose = v); });
 
-    // 所属车型 + 项目类别（并排）
+    // 所属标签 + 项目类别（并排）
     const r2 = contentEl.createDiv({ cls: 'mswb-modal-inlinerow' });
-    this.makeField(r2, '所属车型', null, ctl => {
-      this.makeInlineDropdown(ctl, getAllVehicles(), () => this.vehicle, v => this.vehicle = v, addCustomVehicle);
+    this.makeField(r2, '所属标签', null, ctl => {
+      this.makeInlineDropdown(ctl, getAllTags(), () => this.tag, v => this.tag = v, addCustomTag);
     });
     this.makeField(r2, '项目类别', null, ctl => {
       this.makeInlineDropdown(ctl, getAllCategories(), () => this.category, v => this.category = v, addCustomCategory);
@@ -182,10 +182,10 @@ export class CreateProjectModal extends Modal {
 
     const content = [
       '---', 'tags:', '  - 项目索引',
-      this.vehicle !== '通用' ? `  - ${this.vehicle}` : '', `  - ${this.category}`, '---',
+      this.tag !== '通用' ? `  - ${this.tag}` : '', `  - ${this.category}`, '---',
       '', `# ${this.name.trim()}`, '', `> ${this.purpose || '项目描述待补充'}`,
       '', '## 核心信息', '', '| 项目 | 内容 |', '|------|------|',
-      `| **项目类型** | ${this.category} |`, `| **所属车型** | ${this.vehicle} |`,
+      `| **项目类型** | ${this.category} |`, `| **所属标签** | ${this.tag} |`,
       `| **开发周期** | ${this.workDays} 工作日 |`, `| **预计周期** | ${this.startDate} ~ ${this.endDate} |`,
       '| **当前状态** | 规划中 |',
       '', '## 排期里程碑', '', '| 节点 | 日期 | 状态 |', '|------|------|------|',

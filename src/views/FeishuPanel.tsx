@@ -59,16 +59,15 @@ function SetupGuide({ onRecheck }: { onRecheck: () => void }) {
         textAlign: 'left', background: 'var(--background-secondary)', borderRadius: 8,
         padding: '16px 20px', margin: '0 auto', maxWidth: 440, fontSize: 13, lineHeight: 2,
       }}>
-        <div style={{ marginBottom: 8, fontWeight: 600 }}>📋 三步安装：</div>
-        <div><strong>1.</strong> 安装 Node.js<br />
-          <span style={{ color: 'var(--text-muted)', marginLeft: 20 }}>
-            <a href="https://nodejs.org" target="_blank" rel="noopener">https://nodejs.org</a></span>
+        <div style={{ marginBottom: 8, fontWeight: 600 }}>📋 安装方式：</div>
+        <div><strong>• 自动安装</strong>（推荐）<br />
+          <code style={{ marginLeft: 20, padding: '2px 10px', background: 'var(--background-primary)', borderRadius: 4, fontSize: 12, userSelect: 'all' }}>npm install -g @larksuite/cli</code>
         </div>
-        <div style={{ marginTop: 8 }}><strong>2.</strong> 安装 lark-cli<br />
-          <code style={{ marginLeft: 20, padding: '2px 10px', background: 'var(--background-primary)', borderRadius: 4, fontSize: 12, userSelect: 'all' }}>npm install -g lark-cli</code>
+        <div style={{ marginTop: 8 }}><strong>• 手动指定</strong><br />
+          <span style={{ marginLeft: 20, color: 'var(--text-muted)' }}>插件设置 → 飞书集成 → 填写 lark-cli 路径</span>
         </div>
-        <div style={{ marginTop: 8 }}><strong>3.</strong> 登录飞书<br />
-          <code style={{ marginLeft: 20, padding: '2px 10px', background: 'var(--background-primary)', borderRadius: 4, fontSize: 12, userSelect: 'all' }}>lark-cli auth login</code>
+        <div style={{ marginTop: 8 }}><strong>• npx 临时使用</strong><br />
+          <span style={{ marginLeft: 20, color: 'var(--text-muted)' }}>插件会自动尝试 npx @larksuite/cli 作为兜底</span>
         </div>
       </div>
 

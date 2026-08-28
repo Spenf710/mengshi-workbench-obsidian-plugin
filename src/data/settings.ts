@@ -54,7 +54,7 @@ const DEFAULT_SESSION_CONFIG: SessionConfig = {
 
 export interface ProjectMetaOverride {
   systemType?: string;
-  vehicle?: string;
+  tag?: string;
   emoji?: string;
 }
 
@@ -72,21 +72,31 @@ export interface PluginConfig {
   workLogPath: string;
   projectRoots: string[];
   baseCategories: string[];
-  baseVehicles: string[];
+  baseTags: string[];
   /** 生长面板排除的文件夹路径（不会出现在种子浏览器中） */
   excludedFolders: string[];
   /** 会话任务存储目录（vault 内相对路径，存放独立任务清单 md） */
   taskStorePath: string;
+  /** 可见 Tab 页配置：key 为 tabKey，true=显示 */
+  visibleTabs: Record<string, boolean>;
 }
 
 const DEFAULT_CONFIG: PluginConfig = {
   diaryTemplate: 'templates/工作日志.md',
   workLogPath: '工作日志',
   projectRoots: ['项目管理-系统', '项目管理-车型', '日常工作-通用'],
-  baseCategories: ['多维表', 'RPA自动化', 'AI智能体', '工具开发', '车型项目', '其他'],
-  baseVehicles: ['通用', 'M18-3', 'M18-2'],
+  baseCategories: ['通用', '其他'],
+  baseTags: ['通用'],
   excludedFolders: ['工作日志/', '工作周报/', 'templates/', '.obsidian/', '.claude/', '.claudian/', '.trash/'],
   taskStorePath: '会话任务',
+  visibleTabs: {
+    calendar: true,
+    projects: true,
+    todos: true,
+    gantt: true,
+    feishu: true,
+    sessions: true,
+  },
 };
 
 interface PluginData {
@@ -95,7 +105,7 @@ interface PluginData {
   ganttOverrides?: GanttOverridesData;
   projectMetaOverrides?: Record<string, ProjectMetaOverride>;
   customCategories?: string[];
-  customVehicles?: string[];
+  customTags?: string[];
   domainIcons?: Record<string, string>;
   feishu?: FeishuConfig;
   session?: SessionConfig;
@@ -215,18 +225,18 @@ export async function addCustomCategory(cat: string): Promise<void> {
   }
 }
 
-/** 获取全部车型（配置基础 + 自定义 + 项目实际） */
-export function getAllVehicles(projectVehicles?: Set<string>): string[] {
+/** 获取全部标签（配置基础 + 自定义 + 项目实际） */
+export function getAllTags(projectTags?: Set<string>): string[] {
   const cfg = getConfig();
-  const custom = dataCache.customVehicles ?? [];
-  const project = projectVehicles ? Array.from(projectVehicles) : [];
-  return [...new Set([...cfg.baseVehicles, ...project, ...custom])].sort();
+  const custom = dataCache.customTags ?? [];
+  const project = projectTags ? Array.from(projectTags) : [];
+  return [...new Set([...cfg.baseTags, ...project, ...custom])].sort();
 }
 
-export async function addCustomVehicle(v: string): Promise<void> {
-  if (!dataCache.customVehicles) dataCache.customVehicles = [];
-  if (!dataCache.customVehicles.includes(v)) {
-    dataCache.customVehicles.push(v);
+export async function addCustomTag(v: string): Promise<void> {
+  if (!dataCache.customTags) dataCache.customTags = [];
+  if (!dataCache.customTags.includes(v)) {
+    dataCache.customTags.push(v);
     await persist();
   }
 }
@@ -247,9 +257,9 @@ export async function removeCustomCategory(cat: string): Promise<void> {
   await persist();
 }
 
-export async function removeCustomVehicle(v: string): Promise<void> {
-  if (!dataCache.customVehicles) return;
-  dataCache.customVehicles = dataCache.customVehicles.filter((c) => c !== v);
+export async function removeCustomTag(v: string): Promise<void> {
+  if (!dataCache.customTags) return;
+  dataCache.customTags = dataCache.customTags.filter((c) => c !== v);
   await persist();
 }
 

@@ -3,10 +3,10 @@ import { type App, TFile } from 'obsidian';
 import {
   scanProjects,
   groupBySource,
-  groupByVehicle,
+  groupByTag,
   groupBySystem,
   formatDate,
-  getVehicles,
+  getTags,
   getCategories,
   type ProjectInfo,
   type ProjectGroup,
@@ -20,7 +20,7 @@ import { FeishuPanel } from './FeishuPanel';
 import { SessionsPanel } from './SessionsPanel';
 import { CreateProjectModal } from './CreateProjectModal';
 import { GANTT_DATA } from '../data/ganttData';
-import { saveProjectMeta, getGanttOverrides, addCustomCategory, addCustomVehicle, removeCustomCategory, removeCustomVehicle, getCategoryUsage, getConfig, getDomainIcon, setDomainIcon } from '../data/settings';
+import { saveProjectMeta, getGanttOverrides, addCustomCategory, addCustomTag, removeCustomCategory, removeCustomTag, getCategoryUsage, getConfig, getDomainIcon, setDomainIcon } from '../data/settings';
 import { writeUrlToReadme, removeUrlFromReadme } from '../data/projectScanner';
 import {
   scanLogsByMonth,
@@ -39,7 +39,7 @@ import {
 
 // ===== 常量 =====
 type TabKey = 'calendar' | 'projects' | 'todos' | 'gantt' | 'feishu' | 'sessions';
-type SortMode = 'source' | 'vehicle' | 'system';
+type SortMode = 'source' | 'tag' | 'system';
 
 const TABS = [
   { key: 'calendar' as const, label: '日历', icon: '📅' },
@@ -61,10 +61,23 @@ export function WorkbenchApp({ app }: { app: App }) {
   const [activeTab, setActiveTab] = useState<TabKey>('calendar');
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // 根据配置过滤可见 Tab
+  const visibleTabs = useMemo(() => {
+    const cfg = getConfig();
+    return TABS.filter((t) => cfg.visibleTabs?.[t.key] !== false);
+  }, []);
+
+  // 当前 Tab 被隐藏时自动切换到第一个可见 Tab
+  useEffect(() => {
+    if (visibleTabs.length > 0 && !visibleTabs.find((t) => t.key === activeTab)) {
+      setActiveTab(visibleTabs[0].key);
+    }
+  }, [visibleTabs, activeTab]);
+
   return (
     <div className="mswb-app">
       <nav className="mswb-tabs">
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.key}
             className={`mswb-tab ${activeTab === tab.key ? 'active' : ''}`}
@@ -485,7 +498,7 @@ function ProjectsPanel({ app }: { app: App }) {
 
   const groups = useMemo<ProjectGroup[]>(() => {
     if (sortMode === 'source') return groupBySource(projects);
-    if (sortMode === 'vehicle') return groupByVehicle(projects);
+    if (sortMode === 'tag') return groupByTag(projects);
     if (sortMode === 'system') return groupBySystem(projects);
     return [{ key: 'all', label: `全部项目（${projects.length}）`, projects }];
   }, [projects, sortMode]);
@@ -494,7 +507,7 @@ function ProjectsPanel({ app }: { app: App }) {
     return {
       total: projects.length,
       totalFiles: projects.reduce((s, p) => s + p.fileCount, 0),
-      vehicles: new Set(projects.map((p) => p.vehicle)).size,
+      tags: new Set(projects.map((p) => p.tag)).size,
       systems: new Set(projects.map((p) => p.systemType)).size,
     };
   }, [projects]);
@@ -538,7 +551,7 @@ function ProjectsPanel({ app }: { app: App }) {
           <strong>{stats.totalFiles}</strong> 篇文档
         </span>
         <span className="mswb-stat">
-          <strong>{stats.vehicles}</strong> 个车型
+          <strong>{stats.tags}</strong> 个标签
         </span>
         <span className="mswb-stat">
           <strong>{stats.systems}</strong> 类系统
@@ -556,7 +569,7 @@ function ProjectsPanel({ app }: { app: App }) {
       <div className="mswb-proj-sort">
         {([
           { key: 'source', label: '📂 按领域' },
-          { key: 'vehicle', label: '🚗 按车型' },
+          { key: 'tag', label: '🏷 按标签' },
           { key: 'system', label: '⚙ 按类别' },
         ] as { key: SortMode; label: string }[]).map((opt) => (
           <button
@@ -642,7 +655,7 @@ function ProjectGroupBlock({
 function ProjectCard({ project, app, dateMap, onMetaChange }: { project: ProjectInfo; app: App; dateMap: Map<string, { start: string; end: string }>; onMetaChange?: () => void }) {
   const [baseUrl, setBaseUrl] = useState(project.baseUrl ?? '');
   const [editing, setEditing] = useState(false);
-  const [editingTag, setEditingTag] = useState<'vehicle' | 'systemType' | 'emoji' | null>(null);
+  const [editingTag, setEditingTag] = useState<'tag' | 'systemType' | 'emoji' | null>(null);
   const [showCustom, setShowCustom] = useState(false);
   const [customInput, setCustomInput] = useState('');
   const [emojiInput, setEmojiInput] = useState(project.emoji);
@@ -722,14 +735,14 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
         <div className="mswb-card-title-group">
           <h4 className="mswb-card-title">{project.name}</h4>
           <div className="mswb-card-tags">
-            {editingTag === 'vehicle' ? (
+            {editingTag === 'tag' ? (
               <span style={{ position: 'relative', display: 'inline-flex' }}>
                 <span
-                  className="mswb-tag mswb-tag-vehicle"
+                  className="mswb-tag mswb-tag-tag"
                   style={{ cursor: 'pointer', outline: '1px solid var(--interactive-accent)' }}
                   onClick={() => setEditingTag(null)}
                 >
-                  {project.vehicle}
+                  {project.tag}
                 </span>
                 <span className="mswb-tag-menu" ref={menuRef}>
                   {showCustom ? (
@@ -739,23 +752,23 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                       onChange={(e) => setCustomInput(e.target.value)}
                       onKeyDown={async (e) => {
                         if (e.key === 'Enter' && customInput.trim()) {
-                          await addCustomVehicle(customInput.trim());
-                          await saveProjectMeta(project.folderName, { vehicle: customInput.trim() });
+                          await addCustomTag(customInput.trim());
+                          await saveProjectMeta(project.folderName, { tag: customInput.trim() });
                           setCustomInput(''); setShowCustom(false); setEditingTag(null);
                           onMetaChange?.();
                         }
                         if (e.key === 'Escape') { setCustomInput(''); setShowCustom(false); setEditingTag(null); }
                       }}
-                      placeholder="输入新车型…"
+                      placeholder="输入新标签…"
                       autoFocus
                     />
                   ) : (
                     <>
-                      {getVehicles().map((v) => {
-                        const isBase = getConfig().baseVehicles.includes(v);
+                      {getTags().map((v) => {
+                        const isBase = getConfig().baseTags.includes(v);
                         return (
                           <span key={v} className="mswb-tag-menu-item" onClick={async () => {
-                            try { await saveProjectMeta(project.folderName, { vehicle: v }); } catch {} // eslint-disable-line
+                            try { await saveProjectMeta(project.folderName, { tag: v }); } catch {} // eslint-disable-line
                             setEditingTag(null);
                             onMetaChange?.();
                           }}>
@@ -765,10 +778,10 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                                 className="mswb-tag-menu-del"
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  try { await removeCustomVehicle(v); } catch {} // eslint-disable-line
+                                  try { await removeCustomTag(v); } catch {} // eslint-disable-line
                                   onMetaChange?.();
                                 }}
-                                title="删除此车型"
+                                title="删除此标签"
                               >
                                 ✕
                               </button>
@@ -789,12 +802,12 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
               </span>
             ) : (
               <span
-                className="mswb-tag mswb-tag-vehicle"
-                onClick={() => { setEditingTag('vehicle'); setShowCustom(false); }}
-                title="点击编辑车型"
+                className="mswb-tag mswb-tag-tag"
+                onClick={() => { setEditingTag('tag'); setShowCustom(false); }}
+                title="点击编辑标签"
                 style={{ cursor: 'pointer' }}
               >
-                {project.vehicle}
+                {project.tag}
               </span>
             )}
             {editingTag === 'systemType' ? (

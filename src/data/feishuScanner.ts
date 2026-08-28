@@ -6,6 +6,7 @@
  */
 
 import { exec } from 'child_process';
+import * as fs from 'fs';
 import { getFeishuConfig, type FeishuConfig } from './settings';
 
 // ===== 超时包装 =====
@@ -102,6 +103,15 @@ function buildDocUrl(objToken: string, objType: string): string {
 let _cachedCliPath: string | null = null;
 
 async function getCliVersion(cliPath: string): Promise<string | null> {
+  if (cliPath === '__npx__') {
+    return new Promise((resolve) => {
+      exec('npx @larksuite/cli --version', { timeout: 15000 }, (err, stdout) => {
+        if (err) { resolve(null); return; }
+        const m = stdout.match(/(\d+\.\d+\.\d+)/);
+        resolve(m ? m[1] : null);
+      });
+    });
+  }
   return new Promise((resolve) => {
     exec(`"${cliPath}" --version`, { timeout: 10000 }, (err, stdout) => {
       if (err) { resolve(null); return; }
@@ -114,20 +124,55 @@ async function getCliVersion(cliPath: string): Promise<string | null> {
 export async function detectLarkCli(): Promise<string | null> {
   const cfg = getFeishuConfig();
 
-  // 1. 用户手动配置
+  // 1. 用户手动配置（优先级最高）
   if (cfg.larkCliPath) {
-    _cachedCliPath = cfg.larkCliPath;
-    return cfg.larkCliPath;
+    if (fs.existsSync(cfg.larkCliPath)) {
+      _cachedCliPath = cfg.larkCliPath;
+      return cfg.larkCliPath;
+    }
+    // 用户配置了但文件不存在 → 不回落，让用户检查路径
+    _cachedCliPath = null;
+    return null;
   }
 
-  // 2. Windows: Electron 的 PATH 可能不含 npm 全局目录，用完整路径
+  // 2. Windows 多路径探测
   if (process.platform === 'win32') {
-    const npmPath = `${process.env.APPDATA || ''}\\npm\\lark-cli.cmd`;
-    _cachedCliPath = npmPath;
-    return npmPath;
+    const candidates = [
+      // a) npm 全局 .cmd 脚本（最常见）
+      `${process.env.APPDATA || ''}\\npm\\lark-cli.cmd`,
+      // b) npm 全局 node_modules 下的实际二进制
+      `${process.env.APPDATA || ''}\\npm\\node_modules\\@larksuite\\cli\\bin\\lark-cli.exe`,
+      // c) LocalAppData 下的 npm（某些 npm 安装使用 Local）
+      `${process.env.LOCALAPPDATA || ''}\\npm\\lark-cli.cmd`,
+      `${process.env.LOCALAPPDATA || ''}\\npm\\node_modules\\@larksuite\\cli\\bin\\lark-cli.exe`,
+    ];
+
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        _cachedCliPath = p;
+        return p;
+      }
+    }
+
+    // d) 尝试 `where lark-cli` 搜索 PATH
+    const wherePath = await new Promise<string | null>((resolve) => {
+      exec('where lark-cli', { timeout: 5000 }, (err, stdout) => {
+        if (err) { resolve(null); return; }
+        const firstLine = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0];
+        resolve(firstLine && fs.existsSync(firstLine) ? firstLine : null);
+      });
+    });
+    if (wherePath) {
+      _cachedCliPath = wherePath;
+      return wherePath;
+    }
+
+    // 3. npx 兜底：所有路径都找不到，用 npx 执行
+    _cachedCliPath = '__npx__';
+    return '__npx__';
   }
 
-  // 3. Mac/Linux: npm 全局通常在 PATH 中
+  // 4. Mac/Linux: npm 全局通常在 PATH 中
   _cachedCliPath = 'lark-cli';
   return 'lark-cli';
 }
@@ -152,10 +197,15 @@ function execLarkCliRaw(args: string[], timeoutMs: number = 15000): Promise<Lark
 
 function _execLarkCli(args: string[], timeoutMs: number, checkOk: boolean): Promise<LarkCliResult> {
   return withTimeout(new Promise<LarkCliResult>((resolve) => {
-    const cliPath = _cachedCliPath;
-    if (!cliPath) { resolve({ ok: false, data: null, error: 'lark-cli 未检测到' }); return; }
+    const rawPath = _cachedCliPath;
+    if (!rawPath) { resolve({ ok: false, data: null, error: 'lark-cli 未检测到' }); return; }
 
-    // 构建安全命令：JSON 参数用双引号包裹，内部双引号用 \" 转义
+    // __npx__ 模式：用 npx @larksuite/cli 执行
+    const isNpxMode = rawPath === '__npx__';
+    const cliPath = isNpxMode ? 'npx' : rawPath;
+    const npxPrefix = isNpxMode ? ['@larksuite/cli'] : [];
+
+    // 构建安全命令
     const safeArgs = args.map((a) => {
       if (a.startsWith('{') || a.startsWith('[')) {
         return `"${a.replace(/"/g, '\\"')}"`;
@@ -163,7 +213,9 @@ function _execLarkCli(args: string[], timeoutMs: number, checkOk: boolean): Prom
       if (/\s/.test(a)) return `"${a}"`;
       return a;
     });
-    const cmd = `"${cliPath}" ${safeArgs.join(' ')}`;
+    const cmd = isNpxMode
+      ? `npx @larksuite/cli ${safeArgs.join(' ')}`
+      : `"${cliPath}" ${safeArgs.join(' ')}`;
 
     exec(cmd, { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
@@ -230,7 +282,9 @@ export async function checkConnection(forceRefresh = false): Promise<LarkConnect
 
   // 检测登录态 — 直接用裸 exec，不经过任何封装
   const authResult = await new Promise<LarkConnection>((resolve) => {
-    exec(`"${cliPath}" auth status`, { timeout: 15000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+    const isNpxMode = cliPath === '__npx__';
+    const authCmd = isNpxMode ? 'npx @larksuite/cli auth status' : `"${cliPath}" auth status`;
+    exec(authCmd, { timeout: 15000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
         resolve({
           status: 'no-auth', cliPath, cliVersion: version,

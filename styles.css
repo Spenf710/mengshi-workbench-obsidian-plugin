@@ -294,7 +294,7 @@
   letter-spacing: 0.3px;
 }
 
-.mswb-tag-vehicle {
+.mswb-tag-tag {
   background: color-mix(in srgb, var(--color-blue) 20%, transparent);
   color: var(--color-blue);
 }
@@ -1117,6 +1117,33 @@
 .mswb-modal-submit:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* 设置页折叠面板 */
+.mswb-settings-group {
+  margin: 12px 0;
+  padding: 0 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+}
+.mswb-settings-group summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 0.95em;
+  border-radius: 8px;
+  user-select: none;
+}
+.mswb-settings-group summary:hover {
+  background: var(--background-modifier-hover);
+}
+.mswb-settings-group[open] summary {
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 4px;
+}
+.mswb-settings-group > .setting-item:first-of-type {
+  border-top: none;
 }
 
 /* 设置页删除按钮 */
