@@ -104,21 +104,21 @@ let _cachedCliPath: string | null = null;
 
 async function getCliVersion(cliPath: string): Promise<string | null> {
   if (cliPath === '__npx__') {
-    return new Promise((resolve) => {
-      exec('npx @larksuite/cli --version', { timeout: 15000 }, (err, stdout) => {
+    return withTimeout(new Promise((resolve) => {
+      exec('npx --no-install @larksuite/cli --version', { timeout: 15000 }, (err, stdout) => {
         if (err) { resolve(null); return; }
         const m = stdout.match(/(\d+\.\d+\.\d+)/);
         resolve(m ? m[1] : null);
       });
-    });
+    }), 20000, null);
   }
-  return new Promise((resolve) => {
+  return withTimeout(new Promise((resolve) => {
     exec(`"${cliPath}" --version`, { timeout: 10000 }, (err, stdout) => {
       if (err) { resolve(null); return; }
       const m = stdout.match(/(\d+\.\d+\.\d+)/);
       resolve(m ? m[1] : null);
     });
-  });
+  }), 15000, null);
 }
 
 export async function detectLarkCli(): Promise<string | null> {
@@ -214,7 +214,7 @@ function _execLarkCli(args: string[], timeoutMs: number, checkOk: boolean): Prom
       return a;
     });
     const cmd = isNpxMode
-      ? `npx @larksuite/cli ${safeArgs.join(' ')}`
+      ? `npx --no-install @larksuite/cli ${safeArgs.join(' ')}`
       : `"${cliPath}" ${safeArgs.join(' ')}`;
 
     exec(cmd, { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
@@ -280,10 +280,27 @@ export async function checkConnection(forceRefresh = false): Promise<LarkConnect
 
   const version = await getCliVersion(cliPath);
 
-  // 检测登录态 — 直接用裸 exec，不经过任何封装
-  const authResult = await new Promise<LarkConnection>((resolve) => {
+  // version 为 null 说明 CLI 无法执行（未安装 / 路径错误 / npx 包不可用），
+  // 判定为「未安装」而非继续走登录态检测，避免误判为「未登录」
+  if (!version) {
+    _connectionCache = {
+      status: 'no-cli',
+      cliPath: cliPath === '__npx__' ? null : cliPath,
+      cliVersion: null,
+      userName: null,
+      openId: null,
+      tokenExpiresAt: null,
+      error: '未检测到可用的 lark-cli，请先运行 npm install -g @larksuite/cli',
+    };
+    _connectionCacheTime = Date.now();
+    return _connectionCache;
+  }
+
+  // 检测登录态 — withTimeout 防 Electron 下 exec timeout 失效导致永久卡死
+  const authResult = await withTimeout(
+    new Promise<LarkConnection>((resolve) => {
     const isNpxMode = cliPath === '__npx__';
-    const authCmd = isNpxMode ? 'npx @larksuite/cli auth status' : `"${cliPath}" auth status`;
+    const authCmd = isNpxMode ? 'npx --no-install @larksuite/cli auth status' : `"${cliPath}" auth status`;
     exec(authCmd, { timeout: 15000, maxBuffer: 2 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
         resolve({
@@ -319,7 +336,14 @@ export async function checkConnection(forceRefresh = false): Promise<LarkConnect
         });
       }
     });
-  });
+  }),
+    20000,
+    {
+      status: 'no-auth', cliPath, cliVersion: version,
+      userName: null, openId: null, tokenExpiresAt: null,
+      error: '登录态检测超时，请运行 lark-cli auth login',
+    },
+  );
 
   _connectionCache = authResult;
   _connectionCacheTime = Date.now();
