@@ -50,12 +50,12 @@ function getProjectChoices(app: App): ProjectChoice[] {
       );
       if (readme) {
         const name = folder.replace(/^\d+\./, '');
-        const isSystem = !root.includes('车型');
-        const emoji = isSystem ? '⚙' : '🚗';
         // 类别：覆盖 > 文件夹名推断 > null
         const category = metaOverrides[folder]?.systemType
-          || inferCategory(folder, isSystem ? '系统' : '车型')
+          || inferCategory(folder, '')
           || null;
+        // emoji：维度信息来自推断类别
+        const emoji = category === '车型项目' ? '🚗' : (category ? '⚙' : '📁');
         choices.push({ name: `${emoji} ${name}`, path: readme.path, isDiary: false, category });
       }
     }

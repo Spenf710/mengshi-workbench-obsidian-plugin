@@ -292,7 +292,7 @@ function CalendarPanel({ app }: { app: App }) {
     [app, fmtDate],
   );
 
-// ===== 日历 cell 状态 badge（模块级，避免每次渲染重建） =====
+// ===== 日历 cell 状态 badge（模块级组件，避免嵌套定义导致每次渲染重挂载） =====
 function CalStatusBadge({
   status, isOpen, dropdownRef, onToggle, onChange,
 }: {
@@ -483,6 +483,18 @@ function ProjectsPanel({ app }: { app: App }) {
     });
   }, [app, refreshKey]);
 
+  // 未配置项目根目录（新用户零配置）→ 引导到设置页
+  const noRoots = (getConfig().projectRoots ?? []).length === 0;
+  if (noRoots) {
+    return (
+      <div className="mswb-placeholder">
+        <div className="mswb-placeholder-icon" style={{ fontSize: 32 }}>📂</div>
+        <p style={{ margin: '0 0 8px' }}>尚未配置项目根目录</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>请在「设置 → 猛士驾驶舱 → 项目根目录」添加你的项目管理文件夹</p>
+      </div>
+    );
+  }
+
   const groups = useMemo<ProjectGroup[]>(() => {
     if (sortMode === 'source') return groupBySource(projects);
     if (sortMode === 'tag') return groupByTag(projects);
@@ -523,6 +535,16 @@ function ProjectsPanel({ app }: { app: App }) {
       <div className="mswb-placeholder">
         <div className="mswb-placeholder-icon">🔍</div>
         <p>扫描项目中...</p>
+      </div>
+    );
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="mswb-placeholder">
+        <div className="mswb-placeholder-icon" style={{ fontSize: 32 }}>📂</div>
+        <p>未发现项目</p>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>在项目根目录下新建项目文件夹，或用右侧「🆕 新建项目」创建</p>
       </div>
     );
   }

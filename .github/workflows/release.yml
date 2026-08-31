@@ -1,0 +1,59 @@
+name: Build plugin
+
+on:
+  push:
+    # Sequence patterns inspired by the official Obsidian sample release workflow
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify artifacts
+        run: ls -la dist/main.js dist/manifest.json dist/styles.css
+
+      - name: Copy built files to repository root
+        run: |
+          cp dist/main.js ./main.js
+          cp dist/manifest.json ./manifest.json
+          cp dist/styles.css ./styles.css
+
+      - name: Get version from manifest
+        id: version
+        run: |
+          node -e "console.log('tag='+require('./manifest.json').version)" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.tag }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            main.js
+            manifest.json
+            styles.css
+          name: ${{ env.VERSION }}
+          tag_name: ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true

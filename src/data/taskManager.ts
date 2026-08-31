@@ -7,7 +7,9 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { getTaskStorePath, getSessionConfig } from './settings';
 
 // ===== 类型 =====
@@ -244,20 +246,71 @@ export async function updateTaskMeta(
 export async function deleteTask(app: App, task: SessionTask): Promise<void> {
   const file = app.vault.getAbstractFileByPath(task.path);
   if (!(file instanceof TFile)) return;
-  await app.vault.trash(file);
+  await app.vault.trash(file, true);
 }
 
 // ===== Phase 10: loop 起新会话 =====
 
-/** 探测 claude CLI 可用路径：用户配置 > Windows npm 全局 > PATH 里的 claude */
-function resolveClaudeCli(): string {
-  const cfg = getSessionConfig();
-  if (cfg.claudeCliPath) return cfg.claudeCliPath;
-  if (process.platform === 'win32') {
-    const npm = `${process.env.APPDATA || ''}\\npm\\claude.cmd`;
-    return npm; // 多数情况 npm 全局装在这里；找不到由 exec 报错兜底
+/** 解析 .cmd 包装脚本 → (node, [cli.js])，使 Windows 下可无 shell 直跑，规避 shell 注入面 */
+function parseCmdWrapper(cmdPath: string): { cmd: string; args: string[] } | null {
+  try {
+    const text = fs.readFileSync(cmdPath, 'utf8');
+    const dir = path.dirname(cmdPath) + path.sep;
+    const expand = (p: string) => p.replace(/%~dp0/gi, dir);
+    // npm .cmd 包装内形如：node "%~dp0\node_modules\@anthropic-ai\claude-code\cli.js" %*
+    const m = text.match(/"([^"]*\.js)"/i);
+    if (m) {
+      const js = expand(m[1].trim());
+      if (js && fs.existsSync(js)) {
+        return { cmd: 'node', args: [js] };
+      }
+    }
+    return null;
+  } catch {
+    return null;
   }
-  return 'claude';
+}
+
+/** 解析 claude 可执行目标：优先解析为可直接 spawn 的 (cmd, 前置 args)，避免依赖 shell。返回 null 表示不可用。 */
+function resolveClaudeCli(): { cmd: string; args: string[] } | null {
+  const cfg = getSessionConfig();
+
+  const useFile = (p: string): { cmd: string; args: string[] } | null => {
+    const low = p.toLowerCase();
+    if (low.endsWith('.cmd') || low.endsWith('.bat')) return parseCmdWrapper(p);
+    if (fs.existsSync(p)) return { cmd: p, args: [] }; // 直接可执行（exe/无扩展脚本）
+    return null;
+  };
+
+  // 1. 用户配置（优先，存在性 + 可执行性校验）
+  if (cfg.claudeCliPath && cfg.claudeCliPath.trim()) {
+    const r = useFile(cfg.claudeCliPath.trim());
+    if (r) return r;
+    return null; // 配置了但不可用 → 尽快失败，避免黑盒
+  }
+
+  // 2. Windows 自动探测：npm 全局布局（claude.cmd → cli.js，或直接 cli.js / claude.exe）
+  if (process.platform === 'win32') {
+    const npmDir = process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : '';
+    const candidates = npmDir ? [
+      path.join(npmDir, 'claude.cmd'),
+      path.join(npmDir, 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      path.join(npmDir, 'claude.exe'),
+    ] : [];
+    for (const c of candidates) {
+      if (!fs.existsSync(c)) continue;
+      const r = useFile(c);
+      if (r) return r;
+    }
+  }
+
+  // 3. POSIX：PATH 中的 claude 走 shebang 可执行，spawn 无 shell 直接运行，安全
+  if (process.platform !== 'win32') {
+    return { cmd: 'claude', args: [] };
+  }
+
+  // Windows 且未能在已知位置解析到可直跑文件 → 明确报错（引导用户到设置页配置完整路径）
+  return null;
 }
 
 export interface LoopResult {
@@ -267,47 +320,60 @@ export interface LoopResult {
   output?: string;
 }
 
-/**
- * 用 claude CLI 起新会话（fork 分叉）：保留原会话上下文，生成独立新 session。
- * 命令：claude --resume <原sessionId> --fork-session --print --output-format json -p "<prompt>"
- * 成功后：新 session_id 回填 frontmatter session_ids + 正文追加 loop 历史条目。
- * @param prompt 发给新会话的首条指令（任务描述+审查意见）
- */
-export function runLoop(app: App, task: SessionTask, prompt: string): Promise<LoopResult> {
-  return new Promise((resolve) => {
-    const newSession = task.sessionIds[task.sessionIds.length - 1] || '';
-    const cli = resolveClaudeCli();
-    // 组装命令：--resume 需有原会话；无原会话时退化为纯新会话（不带 resume/fork）
-    const esc = (s: string) => s.replace(/"/g, '\\"').replace(/\n/g, ' ');
-    const promptArg = esc(prompt).slice(0, 4000);
-    const args = newSession
-      ? `--resume "${newSession}" --fork-session --print --output-format json -p "${promptArg}"`
-      : `--print --output-format json -p "${promptArg}"`;
-    const cmd = `"${cli}" ${args}`;
+/** 统一子进程执行管道：error / stdout / stderr / close 解析与回写。settle 保证只 resolve 一次。 */
+function pumpLoopProcess(
+  child: ReturnType<typeof spawn>,
+  app: App,
+  task: SessionTask,
+  prompt: string,
+  settle: (r: LoopResult) => void,
+): void {
+  let stdout = '';
+  let stderr = '';
 
-    exec(cmd, { timeout: 180000, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, async (err, stdout, stderr) => {
-      if (err) {
-        resolve({ ok: false, error: `CLI 执行失败：${err.message}`, output: (stderr || '').slice(0, 500) });
-        return;
+  child.on('error', (err: any) => {
+    if (err?.code === 'ENOENT' || err?.code === 'EINVAL') {
+      settle({ ok: false, error: '未找到 claude CLI，请安装 Claude Code 或检查设置页「claude CLI 路径」' });
+    } else {
+      settle({ ok: false, error: `CLI 启动失败：${err?.message || err}` });
+    }
+  });
+
+  child.stdout.on('data', (d: Buffer) => {
+    stdout += d.toString();
+    if (stdout.length > 4 * 1024 * 1024) {
+      child.kill();
+      settle({ ok: false, error: 'CLI 输出超限' });
+    }
+  });
+  child.stderr.on('data', (d: Buffer) => {
+    stderr += d.toString();
+    if (stderr.length > 4 * 1024 * 1024) {
+      child.kill();
+      settle({ ok: false, error: 'CLI 错误输出超限' });
+    }
+  });
+
+  child.on('close', async () => {
+    // 回填 frontmatter + 正文 loop 历史
+    const parseAndWrite = async (): Promise<LoopResult> => {
+      if (!stdout.trim()) {
+        return { ok: false, error: 'CLI 无输出', output: stderr.slice(0, 500) };
       }
       let obj: any;
       try {
         obj = JSON.parse(stdout);
       } catch {
-        resolve({ ok: false, error: '无法解析 CLI 输出 JSON', output: stdout.slice(0, 500) });
-        return;
+        return { ok: false, error: '无法解析 CLI 输出 JSON', output: stdout.slice(0, 500) };
       }
       if (obj.is_error) {
-        resolve({ ok: false, error: `Claude 返回错误：${obj.api_error_status || obj.result || ''}`, output: stdout.slice(0, 500) });
-        return;
+        return { ok: false, error: `Claude 返回错误：${obj.api_error_status || obj.result || ''}`, output: stdout.slice(0, 500) };
       }
       const newId = obj.session_id as string | undefined;
       if (!newId) {
-        resolve({ ok: false, error: 'CLI 输出未含 session_id', output: stdout.slice(0, 500) });
-        return;
+        return { ok: false, error: 'CLI 输出未含 session_id', output: stdout.slice(0, 500) };
       }
 
-      // 回填 frontmatter + 正文 loop 历史
       const file = app.vault.getAbstractFileByPath(task.path);
       if (file instanceof TFile) {
         try {
@@ -317,26 +383,77 @@ export function runLoop(app: App, task: SessionTask, prompt: string): Promise<Lo
             fm.session_ids = arr;
           });
           task.sessionIds = [...task.sessionIds, newId];
-          // 正文追加 loop 历史条目（不碰 frontmatter，process 后单独追加正文）
           const dateStr = new Date().toISOString().slice(0, 16).replace('T', ' ');
           const entry = `\n- [${dateStr}] loop → 会话 \`${newId.slice(0, 8)}…\` 起新，指令：${prompt.slice(0, 80)}${prompt.length > 80 ? '…' : ''}\n`;
           await app.vault.process(file, (content) => {
-            // 追加到 ## loop 历史 章节末尾；若找不到该章节则追加到文件末尾
             const marker = '## loop 历史';
             const idx = content.indexOf(marker);
             if (idx === -1) return content + entry;
-            // 找到该章节后的下一个 ## 章节或文件尾，插入其前
             const afterMarker = content.indexOf('\n##', idx + marker.length);
             const insertPos = afterMarker === -1 ? content.length : afterMarker;
             return content.slice(0, insertPos) + entry + content.slice(insertPos);
           });
         } catch (e: any) {
-          resolve({ ok: false, error: `新会话已创建但回写失败：${e?.message || e}`, output: newId });
-          return;
+          return { ok: false, error: `新会话已创建但回写失败：${e?.message || e}`, output: newId };
         }
       }
-      resolve({ ok: true, newSessionId: newId });
-    });
+      return { ok: true, newSessionId: newId };
+    };
+
+    settle(await parseAndWrite());
+  });
+}
+
+/**
+ * 用 claude CLI 起新会话（fork 分叉）：保留原会话上下文，生成独立新 session。
+ * 成功后：新 session_id 回填 frontmatter session_ids + 正文追加 loop 历史条目。
+ * 安全：不经过 shell（Windows 直接 node cli.js 或 exe），参数数组由 Node 逐项传递。
+ * @param prompt 发给新会话的首条指令（任务描述+审查意见）
+ */
+export function runLoop(app: App, task: SessionTask, prompt: string): Promise<LoopResult> {
+  return new Promise((resolve) => {
+    const cli = resolveClaudeCli();
+    if (!cli) {
+      resolve({ ok: false, error: '未找到可用的 claude CLI，请在设置页「claude CLI 路径」填写 cli.js 或可执行文件的完整路径' });
+      return;
+    }
+
+    // 会话 id 白名单校验，杜绝非 UUID 输入注入
+    const newSession = task.sessionIds[task.sessionIds.length - 1] || '';
+    if (newSession && !/^[0-9a-fA-F-]{8,64}$/.test(newSession)) {
+      resolve({ ok: false, error: '会话 id 非法，已中止 loop' });
+      return;
+    }
+
+    // 组装参数数组（数组传参 + 无 shell → Node 逐项转义，无注入面）
+    const args: string[] = [...cli.args];
+    if (newSession) args.push('--resume', newSession, '--fork-session');
+    const promptArg = prompt.replace(/\n/g, ' ').slice(0, 4000);
+    args.push('--print', '--output-format', 'json', '-p', promptArg);
+
+    let settled = false;
+    let child: ReturnType<typeof spawn>;
+    const settle = (r: LoopResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(r);
+    };
+
+    // 180s 超时兜底
+    const timer = setTimeout(() => {
+      try { child.kill(); } catch { /* 忽略 */ }
+      settle({ ok: false, error: 'CLI 执行超时（180s）' });
+    }, 180000);
+
+    try {
+      child = spawn(cli.cmd, args, { windowsHide: true });
+    } catch (e: any) {
+      settle({ ok: false, error: `CLI 启动失败：${e?.message || e}` });
+      return;
+    }
+
+    pumpLoopProcess(child, app, task, prompt, settle);
   });
 }
 

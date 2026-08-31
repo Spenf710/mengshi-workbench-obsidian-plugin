@@ -3,6 +3,7 @@ import { Notice, type App } from 'obsidian';
 import {
   GANTT_DATA,
   getDateRange,
+  parseLocalDate,
   daysBetween,
   getMonthLabels,
   type GanttTask,
@@ -297,8 +298,8 @@ export function GanttPanel({ app }: { app: App }) {
       // 聚焦模式：只显示项目周期覆盖今天的项目
       if (focusMode) {
         const todayTs = today.getTime();
-        const ts = new Date(t.start).getTime();
-        const te = new Date(t.end).getTime();
+        const ts = parseLocalDate(t.start).getTime();
+        const te = parseLocalDate(t.end).getTime();
         if (todayTs < ts || todayTs > te) continue;
       }
       // 状态筛选
@@ -410,8 +411,7 @@ export function GanttPanel({ app }: { app: App }) {
 
     const onMove = (e: MouseEvent) => {
       const px = Math.max(rect.left, Math.min(rect.right, e.clientX));
-      const pct = ((px - rect.left) / rect.width) * 100;
-      const dateMs = min.getTime() + (pct / 100) * totalMs;
+      const pct = ((dateMs - min.getTime()) / totalMs) * 100;
       const date = new Date(dateMs);
 
       setTasks((prev) =>
@@ -423,20 +423,20 @@ export function GanttPanel({ app }: { app: App }) {
               phases: t.phases.map((p) => {
                 if (p.id !== phaseId) return p;
                 if (edge === 'start') {
-                  if (date >= new Date(p.end)) return p;
+                  if (date >= parseLocalDate(p.end)) return p;
                   return { ...p, start: fmt(date) };
                 } else {
-                  if (date <= new Date(p.start)) return p;
+                  if (date <= parseLocalDate(p.start)) return p;
                   return { ...p, end: fmt(date) };
                 }
               }),
             };
           }
           if (edge === 'start') {
-            if (date >= new Date(t.end)) return t;
+            if (date >= parseLocalDate(t.end)) return t;
             return { ...t, start: fmt(date) };
           } else {
-            if (date <= new Date(t.start)) return t;
+            if (date <= parseLocalDate(t.start)) return t;
             return { ...t, end: fmt(date) };
           }
         }),
@@ -792,8 +792,8 @@ export function GanttPanel({ app }: { app: App }) {
             </div>
 
             {groupTasks.map((task) => {
-              const startPct = dateToPx(new Date(task.start));
-              const endPct = dateToPx(new Date(task.end));
+              const startPct = dateToPx(parseLocalDate(task.start));
+              const endPct = dateToPx(parseLocalDate(task.end));
               const widthPct = endPct - startPct;
               const midPct = startPct + widthPct / 2;
               const isDragging = drag?.taskId === task.id;
@@ -875,7 +875,7 @@ export function GanttPanel({ app }: { app: App }) {
                           onClick={handleFieldClick(task.id, 'start')}
                           title="点击编辑开始日期"
                         >
-                          {fmtShort(new Date(task.start))}
+                          {fmtShort(parseLocalDate(task.start))}
                         </span>
                       )
                     )}
@@ -900,7 +900,7 @@ export function GanttPanel({ app }: { app: App }) {
                           onClick={handleFieldClick(task.id, 'end')}
                           title="点击编辑结束日期"
                         >
-                          {fmtShort(new Date(task.end))}
+                          {fmtShort(parseLocalDate(task.end))}
                         </span>
                       )
                     )}
@@ -932,8 +932,8 @@ export function GanttPanel({ app }: { app: App }) {
                     {/* ---- 阶段条（有 phases 时显示） ---- */}
                     {task.phases && task.phases.length > 0 &&
                       task.phases.map((phase) => {
-                        const ps = dateToPx(new Date(phase.start));
-                        const pw = dateToPx(new Date(phase.end)) - ps;
+                        const ps = dateToPx(parseLocalDate(phase.start));
+                        const pw = dateToPx(parseLocalDate(phase.end)) - ps;
                         const isPhaseDragging =
                           drag?.taskId === task.id && drag?.phaseId === phase.id;
                         return (
@@ -1008,7 +1008,7 @@ export function GanttPanel({ app }: { app: App }) {
 
                     {/* ---- 里程碑（在主计划线上） ---- */}
                     {task.milestones?.map((ms, msIdx) => {
-                      const msPct = dateToPx(new Date(ms.date));
+                      const msPct = dateToPx(parseLocalDate(ms.date));
                       return (
                         <div
                           key={msIdx}

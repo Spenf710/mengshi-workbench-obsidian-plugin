@@ -772,6 +772,22 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
     return init;
   });
 
+  // 扫描完成后新增类别仍未初始化 → 补一次默认展开（首次无缓存场景）
+  React.useEffect(() => {
+    if (Object.keys(expanded).length > 0) return; // 已有状态（含用户手动折叠）不覆盖
+    const init: Record<string, boolean> = {};
+    let firstSet = false;
+    for (const cat of Object.keys(categorizedGroups.categories)) {
+      if (!firstSet && categorizedGroups.categories[cat].projects.length > 0) {
+        init[cat] = true;
+        firstSet = true;
+      } else {
+        init[cat] = false;
+      }
+    }
+    if (Object.keys(init).length > 0) setExpanded(init);
+  }, [categorizedGroups]);
+
   const toggleCategory = (cat: string) => {
     setExpanded((prev) => ({ ...prev, [cat]: !prev[cat] }));
   };

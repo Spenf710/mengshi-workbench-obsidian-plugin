@@ -161,6 +161,14 @@ export const GANTT_DATA: GanttTask[] = [
 ];
 
 // ===== 工具函数 =====
+
+/** 解析 YYYY-MM-DD 为本地时区 Date（避免 new Date('YYYY-MM-DD') 的 UTC 解析导致日期偏移） */
+export function parseLocalDate(ymd: string): Date {
+  const m = ymd.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!m) return new Date(ymd); // 非法输入回退
+  return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+}
+
 export function getDateRange(tasks: GanttTask[]): { min: Date; max: Date } {
   const now = new Date();
 
@@ -174,8 +182,8 @@ export function getDateRange(tasks: GanttTask[]): { min: Date; max: Date } {
   // 收集时间戳，过滤 Invalid Date
   const timestamps: number[] = [];
   for (const t of tasks) {
-    const s = new Date(t.start).getTime();
-    const e = new Date(t.end).getTime();
+    const s = parseLocalDate(t.start).getTime();
+    const e = parseLocalDate(t.end).getTime();
     if (!isNaN(s)) timestamps.push(s);
     if (!isNaN(e)) timestamps.push(e);
   }

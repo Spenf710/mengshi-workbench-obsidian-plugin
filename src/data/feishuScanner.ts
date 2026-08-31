@@ -775,7 +775,7 @@ export function mergeProjectMaps(
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key, 'zh'));
 }
 
-function matchFile(name: string, projects: ReturnType<typeof buildProjectMap>): string | null {
+function matchFile(name: string, projects: ProjectMapEntry[]): string | null {
   const n = name.toLowerCase();
   let bestKey: string | null = null;
   let bestLen = 0;

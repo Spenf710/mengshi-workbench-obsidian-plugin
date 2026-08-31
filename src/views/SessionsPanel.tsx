@@ -14,7 +14,7 @@ import { Notice } from 'obsidian';
 import { spawn } from 'child_process';
 import { scanSessions, scanAllSessions, parseSessionTurns, archiveSessionFile, getArchivedSessionIds, type SessionCard, type SessionDetail, type TurnBlock } from '../data/sessionScanner';
 import { scanProjects, type ProjectInfo } from '../data/projectScanner';
-import { getSessionArchiveDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride } from '../data/settings';
+import { getSessionArchiveDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride, getConfig } from '../data/settings';
 
 // ===== 类型 =====
 type SidebarTab = 'projects' | 'general';
@@ -140,8 +140,14 @@ function inlineMd(text: string): string {
   s = s.replace(/^- \[ \] /gm, '☐ ');
   s = s.replace(/^- \[x\] /gim, '☑ ');
 
-  // 链接 [text](url)
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // 链接 [text](url) — 协议白名单：仅 https/http/mailto 渲染为可点击链接，其余降级为纯文本防注入
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, t, u) => {
+    const href = (u as string).trim();
+    if (/^(https?:\/\/|mailto:)/i.test(href)) {
+      return `<a href="${href}" target="_blank" rel="noopener">${t}</a>`;
+    }
+    return `${t}（${href}）`; // 非白名单协议 → 纯文本
+  });
 
   // 粗体 + 斜体 ***
   s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
@@ -467,6 +473,14 @@ export function SessionsPanel({ app }: { app: App }) {
         windowsHide: false,
         cwd: cwd || undefined,
       });
+      // 监听 error：CLI 不存在/spawn 失败时防止 uncaughtException 崩溃
+      res.on('error', (err: any) => {
+        if (err?.code === 'ENOENT') {
+          new Notice('未找到 claude 命令，请安装 Claude Code 或检查 PATH');
+        } else {
+          new Notice(`打开 Claude 失败：${err?.message || err}`);
+        }
+      });
       res.unref(); // 解除引用，父进程退出不影响子进程
       new Notice('正在打开 Claude Code…');
     } catch (e: any) {
@@ -529,9 +543,9 @@ export function SessionsPanel({ app }: { app: App }) {
     setMoveTarget(card);
   }, []);
 
-  // 项目分组（按会话数量降序排列）
+  // 项目分组（按会话数量降序排列）— 根目录来自配置，不硬编码
   const menuGroups = useMemo<MenuGroup[]>(() => {
-    const roots = ['项目管理-系统', '项目管理-车型', '日常工作-通用'];
+    const roots = getConfig().projectRoots.length > 0 ? getConfig().projectRoots : [];
     return roots.map((root) => ({
       root,
       projects: projects
@@ -561,18 +575,34 @@ export function SessionsPanel({ app }: { app: App }) {
         list = list.filter((s) => sessionProjectOverrides?.[s.sessionId] === '__daily__');
       }
     } else {
-      // 通用 Tab
+      // 通用 Tab（全部按本地时区判断，避免 toISOString() 的 UTC 偏移导致早 8 点前「今日」少会话）
+      const parseTs = (iso: string | undefined): number => (iso ? new Date(iso).getTime() : NaN);
+      const localMidnightDaysAgo = (daysAgo: number): number => {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - daysAgo);
+        return d.getTime();
+      };
       if (selectedFilter === 'today') {
-        const today = new Date().toISOString().slice(0, 10);
-        list = list.filter((s) => s.lastTime?.startsWith(today));
+        const now = new Date();
+        list = list.filter((s) => {
+          const t = parseTs(s.lastTime);
+          if (isNaN(t)) return false;
+          const d = new Date(t);
+          return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+        });
       } else if (selectedFilter === 'threeDays') {
-        const now = new Date();
-        const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
-        list = list.filter((s) => s.lastTime >= threeDaysAgo);
+        const cutoff = localMidnightDaysAgo(2); // 今天 + 前两天
+        list = list.filter((s) => {
+          const t = parseTs(s.lastTime);
+          return !isNaN(t) && t >= cutoff;
+        });
       } else if (selectedFilter === 'week') {
-        const now = new Date();
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        list = list.filter((s) => s.lastTime >= weekAgo);
+        const cutoff = localMidnightDaysAgo(7); // 滚动 7 天
+        list = list.filter((s) => {
+          const t = parseTs(s.lastTime);
+          return !isNaN(t) && t >= cutoff;
+        });
       } else if (selectedFilter === 'turn5') {
         list = list.filter((s) => s.userTurns <= 5);
       } else if (selectedFilter === 'turn20') {

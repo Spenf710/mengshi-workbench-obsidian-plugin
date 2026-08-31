@@ -76,8 +76,6 @@ export interface PluginConfig {
   projectRoots: string[];
   baseCategories: string[];
   baseTags: string[];
-  /** 生长面板排除的文件夹路径（不会出现在种子浏览器中） */
-  excludedFolders: string[];
   /** 会话任务存储目录（vault 内相对路径，存放独立任务清单 md） */
   taskStorePath: string;
   /** 可见 Tab 页配置：key 为 tabKey，true=显示 */
@@ -87,10 +85,9 @@ export interface PluginConfig {
 const DEFAULT_CONFIG: PluginConfig = {
   diaryTemplate: 'templates/工作日志.md',
   workLogPath: '工作日志',
-  projectRoots: ['项目管理-系统', '项目管理-车型', '日常工作-通用'],
+  projectRoots: [],
   baseCategories: ['通用', '其他'],
   baseTags: ['通用'],
-  excludedFolders: ['工作日志/', '工作周报/', 'templates/', '.obsidian/', '.claude/', '.claudian/', '.trash/'],
   taskStorePath: '会话任务',
   visibleTabs: {
     calendar: true,
@@ -114,12 +111,15 @@ interface PluginData {
   session?: SessionConfig;
   /** 会话标题手动覆盖：sessionId → 自定义标题 */
   sessionTitleOverrides?: Record<string, string>;
-  /** 会话项目归属手动覆盖：sessionId → projectPath */
-  sessionProjectOverrides?: Record<string, string>;
+  /** 会话项目归属手动覆盖：sessionId → projectPath；null = 显式不归属（区别于未设置） */
+  sessionProjectOverrides?: Record<string, string | null>;
 }
 
 export function getConfig(): PluginConfig {
-  return { ...DEFAULT_CONFIG, ...dataCache.config };
+  const cfg = { ...DEFAULT_CONFIG, ...dataCache.config };
+  // 空值归一化（新用户零配置时兜底，避免空路径前缀导致扫描异常）
+  if (!cfg.workLogPath || !cfg.workLogPath.trim()) cfg.workLogPath = '工作日志';
+  return cfg;
 }
 
 /** 任务存储目录路径（保证非空，兜底默认值） */

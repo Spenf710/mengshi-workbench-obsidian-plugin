@@ -471,69 +471,6 @@ export async function scanSessions(
 }
 
 /**
- * 搜索所有 projects 子目录，查找可能属于当前/指定 vault 的会话目录。
- * 当编码后的 vault 目录不存在时，尝试用 cwd 匹配所有子目录中的 .jsonl。
- */
-export async function scanSessionsFallback(
-  vaultPath: string,
-  knownProjectPaths: string[],
-): Promise<ScanSessionsResult> {
-  const root = getSessionRootDir();
-  const encoded = encodeVaultPath(vaultPath);
-  const directDir = path.join(root, encoded);
-
-  // 优先走精确目录
-  const direct = await scanSessions(vaultPath, knownProjectPaths);
-
-  // 如果精确目录命中且数据足够，直接返回
-  if (direct.sessions.length >= 3) return direct;
-
-  // 否则扫描所有 projects 子目录，按 cwd 字段过滤
-  const allDirs = await fs.promises.readdir(root).catch(() => [] as string[]);
-  const extra: typeof direct.sessions = [];
-  let extraFailed = 0;
-
-  for (const d of allDirs) {
-    if (d === encoded) continue; // 已扫过
-    const dirPath = path.join(root, d);
-    try {
-      const st = await fs.promises.stat(dirPath);
-      if (!st.isDirectory()) continue;
-    } catch { continue; }
-    const files = await fs.promises.readdir(dirPath).catch(() => [] as string[]);
-    const jsonlFiles = files.filter((f) => f.endsWith('.jsonl'));
-    for (const f of jsonlFiles) {
-      const filePath = path.join(dirPath, f);
-      const raw = await parseSessionFile(filePath);
-      if (!raw) { extraFailed++; continue; }
-      if (!raw.cwd.includes(vaultPath)) continue; // 只保留 cwd 匹配当前 vault 的
-      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
-      // 来自其他目录的按 cwd 匹配 → 命令行
-      const entrySource = '命令行';
-      extra.push({
-        sessionId: f.replace(/\.jsonl$/, ''),
-        aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
-        firstPrompt: raw.firstPrompt,
-        startTime: raw.startTime,
-        lastTime: raw.lastTime,
-        userTurns: raw.userTurns,
-        toolCalls: raw.toolCalls,
-        cwd: raw.cwd,
-        projectRef,
-        filePath,
-        entrySource,
-        skills: raw.skills,
-      });
-    }
-  }
-
-  const allSessions = [...direct.sessions, ...extra].sort(
-    (a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''),
-  );
-  return { vaultDirName: encoded, sessions: allSessions, scanned: allSessions.length, failed: direct.failed + extraFailed };
-}
-
-/**
  * 一次性扫描所有 projects 子目录下的所有会话（跨 vault 全量）。
  * 用于用户想看到所有历史会话，不限制当前 vault。
  * @param currentVaultPath 当前 vault 绝对路径，用于判断入口来源
