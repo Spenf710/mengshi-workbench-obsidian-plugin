@@ -1,141 +1,138 @@
 # Mengshi Cockpit
 
-> An interactive workbench plugin for Obsidian — Calendar, Projects, Todos, Gantt, Feishu (Lark), and Claude Code Sessions, all in one dashboard. 猛士驾驶舱 · 六合一工作台。
+> An all-in-one Obsidian workbench plugin — **Calendar**, **Projects**, **Todos**, **Gantt**, **Feishu (Lark)**, and **Claude Code Sessions** in a single interactive dashboard. (猛士驾驶舱 · 六合一工作台)
 
-[![Obsidian 插件](https://img.shields.io/badge/Obsidian-%20Plugin-7C3AED)](https://obsidian.md)
+[![Obsidian Plugin](https://img.shields.io/badge/Obsidian-%20Plugin-7C3AED)](https://obsidian.md)
 [![GitHub release](https://img.shields.io/github/v/release/Spenf710/obsidian-mengshi-cockpit.svg)](https://github.com/Spenf710/obsidian-mengshi-cockpit/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> 开源仓库：[Spenf710/obsidian-mengshi-cockpit](https://github.com/Spenf710/obsidian-mengshi-cockpit)
+---
+
+## Features
+
+| Tab | Name | What it does | Highlights |
+|------|------|--------------|------------|
+| 📅 | Calendar | Monthly grid with daily summaries and status; click to jump to or create a daily note | Mon–Sat grid, one-click note creation, inline status editing |
+| 📂 | Projects | Auto-scan project folders, two-dimensional categorization, card view | Auto-discovers projects, editable tags/categories, maintainable links |
+| ✅ | Todos | Aggregates `- [ ]` tasks from multiple sources; checking a box writes back to the source file | Groups by project, collapses completed items, skips template noise |
+| 📊 | Gantt | Gantt timeline, drag scheduling, multi-phase, milestones | Today line, phase bars, two-way README sync |
+| 📡 | Feishu | Feishu Wiki / Drive browsing, project categorization, link checks, smart meeting notes | Deep scan, auto-categorization, access stats, file moves |
+| 💬 | Sessions | Visualize Claude Code sessions, group by project, task workflow | Turn details, title editing, archiving, one-click resume |
+
+> 🖊 **Quick capture**: a bottom FAB offers "Diary / Todo" quick entry (not a separate panel).
 
 ---
 
-## 功能一览
+## Demo
 
-| Tab | 名称 | 功能 | 亮点 |
-|------|------|------|------|
-| 📅 | 日历 | 月度网格、每日摘要 + 状态、点击跳转/新建日志 | 周一~周六网格、空白格一键建日记、状态内嵌编辑 |
-| 📂 | 项目 | 自动扫描项目文件夹、二维分类、卡片视图 | 自动发现新项目、标签/类别可编辑、链接可维护 |
-| ✅ | 待办 | 聚合多来源 `- [ ]` 任务、勾选回写源文件 | 按项目归组、折叠已完成、智能跳过模板噪音 |
-| 📊 | 排期 | 甘特时间线、拖拽排期、多阶段、里程碑 | 今日线、阶段条、README 双向同步 |
-| 📡 | 飞书 | 飞书 Wiki / 云盘浏览、项目归类、链接检查、智能纪要 | 深度扫描、自动归类、访问统计、文件移动 |
-| 💬 | 会话 | Claude Code 会话可视化、按项目归类、任务工作流 | 轮次详情、标题编辑、存档归档、一键续接 |
-
-> 🖊 **快捷录入**：底部 FAB 提供「日记 / 待办」快捷录入，非独立面板。
-
----
-
-## 演示
-
-日历看板展示 | 排期视图展示
+Calendar | Gantt
 :---:|:---:
-![日历看板](assets/demo/日历看板展示.gif) | ![排期视图](assets/demo/排期视图展示.gif)
+![Calendar](assets/demo/日历看板展示.gif) | ![Gantt](assets/demo/排期视图展示.gif)
 
-> 安装动图：见 `assets/demo/插件安装.gif`。
+> Installation demo: see `assets/demo/插件安装.gif`.
 
 ---
 
-## 安装
+## Installation
 
-### 方法一：从 Obsidian 社区插件库（推荐）
+### From Obsidian Community Plugins (recommended)
 
-1. 打开 Obsidian → **设置 → 第三方插件 → 关闭安全模式**
-2. 社区插件 → 浏览 → 搜索 **Mengshi Cockpit** → 安装并启用
-3. 左侧出现猛士盾形 LOGO，点击打开工作台
+1. Open Obsidian → **Settings → Community plugins → turn off Restricted mode**
+2. Community plugins → Browse → search **Mengshi Cockpit** → Install and enable
+3. A shield-shaped icon appears in the ribbon; click it to open the workbench
 
-### 方法二：手动安装（Release 产物）
+### Manual install (Release)
 
-1. 在 [Releases](https://github.com/Spenf710/obsidian-mengshi-cockpit/releases) 下载最新 `main.js`、`manifest.json`、`styles.css`
-2. 放入 vault 的 `.obsidian/plugins/mengshi-workbench/`
-3. 设置 → 第三方插件 → 启用
+1. Download the latest `main.js`, `manifest.json`, `styles.css` from [Releases](https://github.com/Spenf710/obsidian-mengshi-cockpit/releases)
+2. Put them into `.obsidian/plugins/mengshi-workbench/` in your vault
+3. Settings → Community plugins → Enable
 
-### 方法三：源码构建
+### Build from source
 
 ```bash
 git clone https://github.com/Spenf710/obsidian-mengshi-cockpit.git
 cd obsidian-mengshi-cockpit
 npm install
-# 构建到当前 vault 插件目录（推荐）：
+# Build directly into your vault's plugin folder (recommended):
 OBSIDIAN_VAULT="C:/path/to/your/vault" npm run build
-# 或构建到 ./dist 后手动拷贝：
+# Or build to ./dist and copy manually:
 npm run build
 ```
 
-产物输出路径优先级：`OBSIDIAN_VAULT` 环境变量 → 当前目录 `.obsidian` → `./dist`。
+Output directory priority: `OBSIDIAN_VAULT` env var → local `.obsidian` → `./dist`.
 
 ---
 
-## 首次配置
+## Setup
 
-插件默认**零配置**可打开，但为获得最佳体验，请到 **设置 → 猛士驾驶舱** 里配置：
+The plugin works **out of the box**, but configure it under **Settings → Mengshi Cockpit** for the best experience:
 
-| 配置项 | 说明 | 默认 |
-|--------|------|------|
-| 工作日志目录 | 存放每日日志的文件夹 | 留空→「工作日志」 |
-| 日记模板 | 新建日记用的模板文件 | `templates/工作日志.md` |
-| 项目根目录 | 项目类文件夹，可添加多个 | 留空→需要手动添加 |
-| 默认类别 / 标签 | 项目分类/标签词表 | `通用 / 其他` |
-| Tab 页 | 可独立开关 6 个 Tab | 全开 |
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Work log folder | Folder for daily notes | Empty → "工作日志" |
+| Diary template | Template used for new notes | `templates/工作日志.md` |
+| Project roots | Project-type folders (multiple allowed) | Empty → add manually |
+| Default categories / tags | Vocabulary for project classification | `通用 / 其他` |
+| Tabs | Toggle the 6 tabs independently | All on |
 
-### 飞书（可选）
+### Feishu (optional)
 
-飞书面板依赖外部工具 **lark-cli**（用户需自行安装并登录）：
+The Feishu panel relies on the external **lark-cli** tool (install and log in yourself):
 
 ```bash
 npm install -g @larksuite/cli
 lark-cli auth login
 ```
 
-插件自动探测 lark-cli（含 npx 兜底）；未安装时会显示引导。
+The plugin auto-detects `lark-cli` (with a `npx` fallback); a guide is shown when it is missing.
 
-### 会话（可选）
+### Sessions (optional)
 
-会话面板读取本机 **Claude Code** 的会话记录（`~/.claude/projects/`），无需配置即可浏览；
-「loop / 在 Claude 中打开」依赖 Claude Code CLI，未安装时按钮会给出引导提示。
-
----
-
-## 数据与隐私
-
-- 所有数据均在本机处理：读 `vault` 的 md 文件、可选读取 `~/.claude/projects` 的会话 jsonl、当打开飞书面板时调用飞书云 API（经 lark-cli 走你的账号凭证）。
-- **不上传任何内容到第三方**：飞书调用仅在执行面板操作（浏览/搜索/统计）时发生。
-- 设置项（含个性化覆盖）保存在 vault 的 `.obsidian/plugins/mengshi-workbench/data.json`。
+The Sessions panel reads local **Claude Code** session records (`~/.claude/projects/`) — no setup needed. "Loop / Open in Claude" requires the Claude Code CLI; buttons show a hint when it is absent.
 
 ---
 
-## 开发
+## Privacy & Data
+
+- Everything is processed locally: it reads your vault's `.md` files, optionally reads `~/.claude/projects` session JSONL, and calls Feishu cloud APIs (via `lark-cli` using your own credentials) only when you open the Feishu panel.
+- **Nothing is uploaded to third parties**: Feishu calls only happen when you perform a panel action (browse / search / stats).
+- Settings (including personal overrides) are stored in `.obsidian/plugins/mengshi-workbench/data.json`.
+
+---
+
+## Development
 
 ```bash
-npm run dev    # watch 模式 + 静态文件同步
-npm run build  # 生产构建
+npm run dev    # watch mode + static file sync
+npm run build  # production build
 ```
 
-- 源码：`src/main.ts`（插件壳） + `src/data/*`（数据层）+ `src/views/*`（视图层）
-- 构建：esbuild bundle → `main.js`；样式 `styles.css` 独立；`manifest.json` 版本与 Release tag 对齐
+- Source: `src/main.ts` (plugin shell) + `src/data/*` (data layer) + `src/views/*` (view layer)
+- Build: esbuild bundle → `main.js`; standalone `styles.css`; `manifest.json` version aligned with the release tag
 
-### 平台
+### Platform
 
-| 项目 | 说明 |
-|------|------|
-| 最小版本 | Obsidian ≥ 1.7.2 |
-| 桌面 | ✅（依赖 Node 运行时；Loop / 会话 / 飞书 CLI / 甘特图均桌面优先） |
-| 移动端 | 不发布（`isDesktopOnly: true`，避免无法使用核心功能） |
-
----
-
-## 致谢 & 许可
-
-- 项目 logo 灵感来自军事风格，沿用自主自由创作，无第三方版权依赖。
-- 本项目使用 [MIT License](LICENSE)。
+| Item | Details |
+|------|---------|
+| Minimum version | Obsidian ≥ 1.7.2 |
+| Desktop | ✅ (requires Node runtime; Loop / Sessions / Feishu CLI / Gantt are desktop-first) |
+| Mobile | Not published (`isDesktopOnly: true`) |
 
 ---
 
-## English Summary
+## Credits & License
 
-**Mengshi Cockpit** is an Obsidian workbench plugin integrating **Calendar, Projects, Todos, Gantt Schedule, Feishu (Lark) cloud, and Claude Code Sessions** into a single interactive dashboard.
+- The logo is an original military-style creation with no third-party copyright dependencies.
+- Released under the [MIT License](LICENSE).
 
-- **Install**: Community plugins (search "Mengshi Cockpit") or manual Release install.
-- **Build**: `npm install` → `OBSIDIAN_VAULT=<vault> npm run build`.
-- **Auth/Data**: All local; Feishu features require `lark-cli`; Session features read local `~/.claude/projects`.
-- **Supported**: Obsidian ≥ 1.7.2, desktop only (Node required).
-- **License**: MIT.
+---
+
+## 中文说明
+
+**猛士驾驶舱** 是一款 Obsidian 一体化工作台插件，把 **日历、项目、待办、甘特排期、飞书 (Lark) 云端、Claude Code 会话** 集成到同一个交互面板。
+
+- **安装**：社区插件市场搜索 "Mengshi Cockpit"，或手动下载 Release 产物放入 `.obsidian/plugins/mengshi-workbench/`。
+- **构建**：`npm install` → `OBSIDIAN_VAULT=<你的 vault> npm run build`。
+- **数据**：全部本地处理；飞书功能需安装 `lark-cli`；会话功能读取本地 `~/.claude/projects`。
+- **平台**：Obsidian ≥ 1.7.2，仅桌面端（依赖 Node 运行时）。
+- **许可**：MIT。
