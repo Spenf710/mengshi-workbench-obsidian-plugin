@@ -104,7 +104,7 @@ export class QuickDiaryModal extends Modal {
       .setDesc('简短摘要，建议 ≤18 字')
       .addText((text) => {
         text.setValue(this.summary).onChange((v) => (this.summary = v));
-        text.inputEl.style.width = '100%';
+        text.inputEl.setCssProps({ width: '100%' });
       });
 
     // 搞定了什么（日记已存在时显示，支持渲染/编辑切换）
@@ -114,9 +114,10 @@ export class QuickDiaryModal extends Modal {
       doneSection.createEl('div', { text: '点击切换编辑 / 预览', cls: 'setting-item-description' });
 
       const doneView = doneSection.createDiv({ cls: 'mswb-modal-md' });
-      const doneEdit = doneSection.createDiv({ cls: 'mswb-modal-md-edit', attr: { style: 'display:none' } });
+      const doneEdit = doneSection.createDiv({ cls: 'mswb-modal-md-edit' });
+      doneEdit.setCssProps({ display: 'none' });
       const ta = doneEdit.createEl('textarea');
-      ta.style.width = '100%'; ta.style.minHeight = '80px';
+      ta.setCssProps({ width: '100%', 'min-height': '80px' });
       let editing = false;
 
       const renderDone = () => {
@@ -139,9 +140,9 @@ export class QuickDiaryModal extends Modal {
             const li = list.createEl('li', { cls: 'mswb-todo-check-row', attr: { 'data-index': String(i) } });
             const cb = li.createEl('input', { type: 'checkbox' });
             cb.checked = isChecked;
-            if (isChecked) { li.style.textDecoration = 'line-through'; li.style.opacity = '0.5'; }
+            if (isChecked) { li.setCssProps({ 'text-decoration': 'line-through', opacity: '0.5' }); }
             const textDiv = li.createEl('div', { cls: 'mswb-todo-check-text' });
-            textDiv.style.maxWidth = `${containerWidth}px`;
+            textDiv.setCssProps({ 'max-width': `${containerWidth}px` });
             textDiv.textContent = text;
 
             cb.addEventListener('change', async () => {
@@ -151,15 +152,14 @@ export class QuickDiaryModal extends Modal {
               const arr = this.done.split('\n');
               arr[index] = arr[index].replace(/\[.?\]/, checked ? '[x]' : '[ ]');
               this.done = arr.join('\n');
-              li.style.textDecoration = checked ? 'line-through' : '';
-              li.style.opacity = checked ? '0.5' : '1';
+              li.setCssProps({ 'text-decoration': checked ? 'line-through' : 'none', opacity: checked ? '0.5' : '1' });
               await this.saveDone();
             });
           }
         }
-        doneView.style.display = editing ? 'none' : 'block';
+        doneView.setCssProps({ display: editing ? 'none' : 'block' });
         ta.value = this.done;
-        doneEdit.style.display = editing ? 'block' : 'none';
+        doneEdit.setCssProps({ display: editing ? 'block' : 'none' });
       };
 
       doneView.addEventListener('click', (e) => {

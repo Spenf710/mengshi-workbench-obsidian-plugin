@@ -246,7 +246,7 @@ export async function updateTaskMeta(
 export async function deleteTask(app: App, task: SessionTask): Promise<void> {
   const file = app.vault.getAbstractFileByPath(task.path);
   if (!(file instanceof TFile)) return;
-  await app.vault.trash(file, true);
+  await app.fileManager.trashFile(file);
 }
 
 // ===== Phase 10: loop 起新会话 =====
@@ -441,7 +441,7 @@ export function runLoop(app: App, task: SessionTask, prompt: string): Promise<Lo
     };
 
     // 180s 超时兜底
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       try { child.kill(); } catch { /* 忽略 */ }
       settle({ ok: false, error: 'CLI 执行超时（180s）' });
     }, 180000);

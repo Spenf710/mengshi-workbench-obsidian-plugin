@@ -42,17 +42,6 @@ export default class MengshiWorkbenchPlugin extends Plugin {
       callback: () => this.activateView(),
     });
 
-    // Command Palette 命令：重新加载插件（开发调试用）
-    this.addCommand({
-      id: 'reload-plugin',
-      name: '刷新插件（开发用）',
-      callback: async () => {
-        await this.app.plugins.disablePlugin(this.manifest.id);
-        await this.app.plugins.enablePlugin(this.manifest.id);
-        new Notice('✅ 插件已刷新');
-      },
-    });
-
     // 注册设置页
     this.addSettingTab(new WorkbenchSettingsTab(this.app, this));
 

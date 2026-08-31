@@ -21,12 +21,14 @@ export function centerModalInWorkbench(modal: Modal): void {
 
   // 同步定位到插件面板区域（动画尚未开始）
   const r = root.getBoundingClientRect();
-  container.style.position = 'fixed';
-  container.style.left = `${r.left}px`;
-  container.style.top = `${r.top}px`;
-  container.style.width = `${r.width}px`;
-  container.style.height = `${r.height}px`;
-  container.style.maxHeight = 'none';
+  container.setCssProps({
+    position: 'fixed',
+    left: `${r.left}px`,
+    top: `${r.top}px`,
+    width: `${r.width}px`,
+    height: `${r.height}px`,
+    'max-height': 'none',
+  });
 
   // 加专用类名，CSS 用 !important 强覆盖禁用 Obsidian 打开动画
   container.addClass('mswb-modal-noflicker');

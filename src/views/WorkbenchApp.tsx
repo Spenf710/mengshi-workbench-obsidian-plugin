@@ -255,8 +255,8 @@ function CalendarPanel({ app }: { app: App }) {
       const dateStr = fmtDate(day);
       const filePath = getDatePath(dateStr);
       const file = app.vault.getAbstractFileByPath(filePath);
-      if (file) {
-        app.workspace.getLeaf(false).openFile(file as any);
+      if (file instanceof TFile) {
+        app.workspace.getLeaf(false).openFile(file);
       }
     },
     [app, fmtDate],
@@ -309,9 +309,13 @@ function CalStatusBadge({
 
     // 临时解除约束，测量文字真实宽度
     const prevMax = el.style.maxWidth;
-    el.style.maxWidth = 'none';
+    el.setCssProps({ 'max-width': 'none' });
     const textWidth = el.scrollWidth;
-    el.style.maxWidth = prevMax;
+    if (prevMax) {
+      el.setCssProps({ 'max-width': prevMax });
+    } else {
+      el.style.removeProperty('max-width');
+    }
 
     // 获取所在行可用宽度
     const row = el.closest('.mswb-cal-day-row') as HTMLElement | null;
@@ -688,8 +692,8 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
 
   const openFile = (path: string) => {
     const file = app.vault.getAbstractFileByPath(path);
-    if (file) {
-      app.workspace.getLeaf(false).openFile(file as any);
+    if (file instanceof TFile) {
+      app.workspace.getLeaf(false).openFile(file);
     }
   };
 
@@ -777,7 +781,7 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                         const isBase = getConfig().baseTags.includes(v);
                         return (
                           <span key={v} className="mswb-tag-menu-item" onClick={async () => {
-                            try { await saveProjectMeta(project.folderName, { tag: v }); } catch {} // eslint-disable-line
+                            try { await saveProjectMeta(project.folderName, { tag: v }); } catch { /* 保存失败时静默忽略 */ }
                             setEditingTag(null);
                             onMetaChange?.();
                           }}>
@@ -787,7 +791,7 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                                 className="mswb-tag-menu-del"
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  try { await removeCustomTag(v); } catch {} // eslint-disable-line
+                                  try { await removeCustomTag(v); } catch { /* 删除失败时静默忽略 */ }
                                   onMetaChange?.();
                                 }}
                                 title="删除此标签"
@@ -839,7 +843,7 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                           try {
                             await addCustomCategory(customInput.trim());
                             await saveProjectMeta(project.folderName, { systemType: customInput.trim() });
-                          } catch {} // eslint-disable-line
+                          } catch { /* 保存失败时静默忽略 */ }
                           setCustomInput(''); setShowCustom(false); setEditingTag(null);
                           onMetaChange?.();
                         }
@@ -858,7 +862,7 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                             if ((e.target as HTMLElement).closest('.mswb-tag-menu-del')) return;
                             try {
                               await saveProjectMeta(project.folderName, { systemType: c });
-                            } catch {} // eslint-disable-line
+                            } catch { /* 保存失败时静默忽略 */ }
                             setEditingTag(null);
                             onMetaChange?.();
                           }}>
@@ -869,7 +873,7 @@ function ProjectCard({ project, app, dateMap, onMetaChange }: { project: Project
                                 disabled={usage > 0}
                                 onClick={usage === 0 ? async (e) => {
                                   e.stopPropagation();
-                                  try { await removeCustomCategory(c); } catch {} // eslint-disable-line
+                                  try { await removeCustomCategory(c); } catch { /* 删除失败时静默忽略 */ }
                                   onMetaChange?.();
                                 } : undefined}
                                 title={usage > 0 ? `有 ${usage} 个项目使用，不可删除` : '删除此类别'}
@@ -1042,9 +1046,9 @@ function TodosPanel({ app }: { app: App }) {
 
   const openFile = (path: string, line: number) => {
     const file = app.vault.getAbstractFileByPath(path);
-    if (file) {
+    if (file instanceof TFile) {
       const leaf = app.workspace.getLeaf(false);
-      leaf.openFile(file as any, { eState: { line } } as any);
+      leaf.openFile(file, { eState: { line } });
     }
   };
 

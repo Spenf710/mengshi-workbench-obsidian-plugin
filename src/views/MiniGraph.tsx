@@ -82,7 +82,7 @@ function simStep(nodes: GraphNode[], alpha: number): number {
 function setupCv(c: HTMLCanvasElement): CanvasRenderingContext2D | null {
   const dpr = window.devicePixelRatio || 1;
   c.width = W * dpr; c.height = H * dpr;
-  c.style.width = W + 'px'; c.style.height = H + 'px';
+  c.setCssProps({ width: `${W}px`, height: `${H}px` });
   const ctx = c.getContext('2d');
   if (!ctx) return null;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

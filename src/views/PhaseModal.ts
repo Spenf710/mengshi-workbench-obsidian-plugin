@@ -80,7 +80,7 @@ export class PhaseModal extends Modal {
           }
         });
         t.inputEl.type = 'number';
-        t.inputEl.style.width = '80px';
+        t.inputEl.setCssProps({ width: '80px' });
       });
 
     new Setting(contentEl)
@@ -89,7 +89,7 @@ export class PhaseModal extends Modal {
       .addText((t) => {
         t.setValue(this.endDate);
         t.inputEl.disabled = true;
-        t.inputEl.style.opacity = '0.7';
+        t.inputEl.setCssProps({ opacity: '0.7' });
       });
 
     const btnRow = contentEl.createDiv({ cls: 'mswb-modal-actions' });

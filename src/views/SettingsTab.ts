@@ -24,10 +24,10 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: '猛士驾驶舱 设置' });
+    new Setting(containerEl).setHeading().setName('猛士驾驶舱 设置');
 
     // ===== 基础路径 =====
-    containerEl.createEl('h3', { text: '📁 基础路径' });
+    new Setting(containerEl).setHeading().setName('📁 基础路径');
 
     new Setting(containerEl)
       .setName('工作日志目录')
@@ -70,7 +70,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
     this.renderRoots(rootsContainer);
 
     // ===== 类别与车型 =====
-    containerEl.createEl('h3', { text: '🏷️ 类别与标签' });
+    new Setting(containerEl).setHeading().setName('🏷️ 类别与标签');
 
     new Setting(containerEl)
       .setName('默认类别')
@@ -125,7 +125,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
     this.renderList(tagContainer, this.config.baseTags, (v) => { this.config.baseTags = v; });
 
     // ===== Tab 页配置 =====
-    containerEl.createEl('h3', { text: '📑 Tab 页' });
+    new Setting(containerEl).setHeading().setName('📑 Tab 页');
 
     const TAB_LABELS: Record<string, string> = {
       calendar: '📅 日历',
@@ -150,7 +150,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
     const sessionCfg = { ...getSessionConfig() };
     const sessionText: any = {};
 
-    containerEl.createEl('h3', { text: '💬 Claude 会话' });
+    new Setting(containerEl).setHeading().setName('💬 Claude 会话');
 
     new Setting(containerEl)
       .setName('会话目录')
@@ -183,7 +183,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
     const feishuCfg = { ...getFeishuConfig() };
     const feishuText: any = {};
 
-    containerEl.createEl('h3', { text: '📡 飞书' });
+    new Setting(containerEl).setHeading().setName('📡 飞书');
 
     new Setting(containerEl)
       .setName('lark-cli 路径')
@@ -222,7 +222,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
       .setDesc('将所有配置恢复为默认值')
       .addButton((b) => b
         .setButtonText('🔄 恢复默认')
-        .setWarning()
+        .setDestructive()
         .onClick(async () => {
           await resetConfig();
           await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '' });

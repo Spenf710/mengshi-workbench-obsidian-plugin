@@ -67,7 +67,7 @@ export class CreateProjectModal extends Modal {
 
     // 预计结束
     const endSetting = new Setting(contentEl).setName('预计结束');
-    endSetting.addText(t => { t.setValue(this.endDate); t.inputEl.disabled = true; t.inputEl.style.opacity = '0.6'; });
+    endSetting.addText(t => { t.setValue(this.endDate); t.inputEl.disabled = true; t.inputEl.setCssProps({ opacity: '0.6' }); });
     const refreshEnd = () => { endSetting.controlEl.querySelector('input')!.value = this.endDate; };
     const updateEnd = () => { this.endDate = addWorkingDays(this.startDate, this.workDays); refreshEnd(); };
 
@@ -114,8 +114,7 @@ export class CreateProjectModal extends Modal {
     const showDropdown = () => {
       const cur = getCurrent();
       container.empty();
-      const sel = container.createEl('select');
-      sel.style.width = '100%';
+      const sel = container.createEl('select', { cls: 'mswb-modal-input' });
       for (const o of options) sel.createEl('option', { value: o, text: o });
       sel.createEl('option', { value: '__new__', text: '+ 新增…' });
       sel.value = options.includes(cur) ? cur : '__new__';
@@ -134,10 +133,9 @@ export class CreateProjectModal extends Modal {
 
     const showInput = () => {
       container.empty();
-      const input = container.createEl('input');
+      const input = container.createEl('input', { cls: 'mswb-modal-input' });
       input.type = 'text';
       input.placeholder = '输入新值，回车确认';
-      input.style.width = '100%';
       let saving = false;
       input.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter' && input.value.trim()) {

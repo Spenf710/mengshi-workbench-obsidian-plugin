@@ -1,14 +1,12 @@
-# 猛士驾驶舱（Obsidian Workbench）
+# Mengshi Cockpit
 
-> 面向 Obsidian 的交互式工作台插件：日历、项目、待办、排期、飞书、会话，六合一。
+> An interactive workbench plugin for Obsidian — Calendar, Projects, Todos, Gantt, Feishu (Lark), and Claude Code Sessions, all in one dashboard. 猛士驾驶舱 · 六合一工作台。
 
 [![Obsidian 插件](https://img.shields.io/badge/Obsidian-%20Plugin-7C3AED)](https://obsidian.md)
-[![GitHub release](https://img.shields.io/github/v/release/Spenf710/mengshi-workbench.svg)](https://github.com/Spenf710/mengshi-workbench/releases)
+[![GitHub release](https://img.shields.io/github/v/release/Spenf710/obsidian-mengshi-cockpit.svg)](https://github.com/Spenf710/obsidian-mengshi-cockpit/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> 开源仓库：[Spenf710/mengshi-workbench](https://github.com/Spenf710/mengshi-workbench)
->
-> English summary at bottom. 插件名保持中文「猛士驾驶舱」，`id` 保持 `mengshi-workbench`（改动 id 会视为全新插件）。
+> 开源仓库：[Spenf710/obsidian-mengshi-cockpit](https://github.com/Spenf710/obsidian-mengshi-cockpit)
 
 ---
 
@@ -34,7 +32,6 @@
 ![日历看板](assets/demo/日历看板展示.gif) | ![排期视图](assets/demo/排期视图展示.gif)
 
 > 安装动图：见 `assets/demo/插件安装.gif`。
-> ⚠️ 以上 gif 取材自开发环境，已做脱敏；发布前请自行确认画面不含公司信息。
 
 ---
 
@@ -43,22 +40,22 @@
 ### 方法一：从 Obsidian 社区插件库（推荐）
 
 1. 打开 Obsidian → **设置 → 第三方插件 → 关闭安全模式**
-2. 社区插件 → 浏览 → 搜索 **猛士驾驶舱** → 安装并启用
+2. 社区插件 → 浏览 → 搜索 **Mengshi Cockpit** → 安装并启用
 3. 左侧出现猛士盾形 LOGO，点击打开工作台
 
 ### 方法二：手动安装（Release 产物）
 
-1. 在 [Releases](https://github.com/Spenf710/mengshi-workbench/releases) 下载最新 `main.js`、`manifest.json`、`styles.css`
+1. 在 [Releases](https://github.com/Spenf710/obsidian-mengshi-cockpit/releases) 下载最新 `main.js`、`manifest.json`、`styles.css`
 2. 放入 vault 的 `.obsidian/plugins/mengshi-workbench/`
 3. 设置 → 第三方插件 → 启用
 
 ### 方法三：源码构建
 
 ```bash
-git clone https://github.com/Spenf710/mengshi-workbench.git
-cd mengshi-workbench
+git clone https://github.com/Spenf710/obsidian-mengshi-cockpit.git
+cd obsidian-mengshi-cockpit
 npm install
-# 构建到当前 vuddle 插件目录（推荐）：
+# 构建到当前 vault 插件目录（推荐）：
 OBSIDIAN_VAULT="C:/path/to/your/vault" npm run build
 # 或构建到 ./dist 后手动拷贝：
 npm run build
@@ -115,13 +112,12 @@ npm run build  # 生产构建
 
 - 源码：`src/main.ts`（插件壳） + `src/data/*`（数据层）+ `src/views/*`（视图层）
 - 构建：esbuild bundle → `main.js`；样式 `styles.css` 独立；`manifest.json` 版本与 Release tag 对齐
-- 提交 PR 或发布前请确保 `npm run build` 通过。
 
 ### 平台
 
 | 项目 | 说明 |
 |------|------|
-| 最小版本 | Obsidian ≥ 1.4.0 |
+| 最小版本 | Obsidian ≥ 1.7.2 |
 | 桌面 | ✅（依赖 Node 运行时；Loop / 会话 / 飞书 CLI / 甘特图均桌面优先） |
 | 移动端 | 不发布（`isDesktopOnly: true`，避免无法使用核心功能） |
 
@@ -138,12 +134,8 @@ npm run build  # 生产构建
 
 **Mengshi Cockpit** is an Obsidian workbench plugin integrating **Calendar, Projects, Todos, Gantt Schedule, Feishu (Lark) cloud, and Claude Code Sessions** into a single interactive dashboard.
 
-- **Install**: Community plugins (search "猛士驾驶舱") or manual Release install.
+- **Install**: Community plugins (search "Mengshi Cockpit") or manual Release install.
 - **Build**: `npm install` → `OBSIDIAN_VAULT=<vault> npm run build`.
 - **Auth/Data**: All local; Feishu features require `lark-cli`; Session features read local `~/.claude/projects`.
-- **Supported**: Obsidian ≥ 1.4.0, desktop only (Node required).
+- **Supported**: Obsidian ≥ 1.7.2, desktop only (Node required).
 - **License**: MIT.
-
----
-
-**相关笔记（Obsidian 文档）**：见本仓库 `docs/` 或用户侧项目文档（如有）。

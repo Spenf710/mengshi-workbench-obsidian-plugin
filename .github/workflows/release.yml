@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build:
@@ -41,6 +43,14 @@ jobs:
         id: version
         run: |
           node -e "console.log('tag='+require('./manifest.json').version)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate build provenance (SLSA)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Create release
         env:
