@@ -1,6 +1,8 @@
 # Mengshi Cockpit
 
-> An all-in-one Obsidian workbench plugin — **Calendar**, **Projects**, **Todos**, **Gantt**, **Feishu (Lark)**, and **Claude Code Sessions** in a single interactive dashboard. (猛士驾驶舱 · 六合一工作台)
+> An all-in-one Obsidian workbench plugin — **Calendar**, **Projects**, **Todos**, **Gantt**, **Feishu (Lark)**, and **Claude Code Sessions** in a single interactive dashboard.
+>
+> A Chinese translation is available at [README.zh-CN.md](README.zh-CN.md).
 
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-%20Plugin-7C3AED)](https://obsidian.md)
 [![GitHub release](https://img.shields.io/github/v/release/Spenf710/obsidian-mengshi-cockpit.svg)](https://github.com/Spenf710/obsidian-mengshi-cockpit/releases)
@@ -124,15 +126,3 @@ npm run build  # production build
 
 - The logo is an original military-style creation with no third-party copyright dependencies.
 - Released under the [MIT License](LICENSE).
-
----
-
-## 中文说明
-
-**猛士驾驶舱** 是一款 Obsidian 一体化工作台插件，把 **日历、项目、待办、甘特排期、飞书 (Lark) 云端、Claude Code 会话** 集成到同一个交互面板。
-
-- **安装**：社区插件市场搜索 "Mengshi Cockpit"，或手动下载 Release 产物放入 `.obsidian/plugins/mengshi-workbench/`。
-- **构建**：`npm install` → `OBSIDIAN_VAULT=<你的 vault> npm run build`。
-- **数据**：全部本地处理；飞书功能需安装 `lark-cli`；会话功能读取本地 `~/.claude/projects`。
-- **平台**：Obsidian ≥ 1.7.2，仅桌面端（依赖 Node 运行时）。
-- **许可**：MIT。
