@@ -1,6 +1,7 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { saveGanttOverride, getAllCategories, getAllTags, getConfig, setConfig, addCustomCategory, addCustomTag } from '../data/settings';
 import { addWorkingDays } from '../data/dateUtils';
+import { centerModalInWorkbench } from './modalHelpers';
 
 export class CreateProjectModal extends Modal {
   private name = '';
@@ -75,6 +76,7 @@ export class CreateProjectModal extends Modal {
     btnRow.createEl('button', { text: '取消' }).addEventListener('click', () => this.close());
     btnRow.createEl('button', { text: '创建项目', cls: 'mswb-modal-submit' })
       .addEventListener('click', () => this.submit());
+    centerModalInWorkbench(this);
   }
 
   /** 创建并排字段 */

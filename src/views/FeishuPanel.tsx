@@ -171,13 +171,13 @@ export function FeishuPanel({ app }: { app: App }) {
   }, [statsMap]);
 
   // 加载智能纪要
-  const doLoadMinutes = async () => {
+  const doLoadMinutes = useCallback(async () => {
     setMinutesLoading(true);
     const list = await loadMinutes();
     setMinutes(list);
     setMinutesLoading(false);
     await setFeishuConfig({ cachedMinutes: list as any });
-  };
+  }, []);
 
   // 排除/取消排除文件夹（即时更新 UI + 持久化）
   const handleToggleExclude = async (token: string) => {
@@ -282,7 +282,7 @@ export function FeishuPanel({ app }: { app: App }) {
     loadNodes(selectedSpace).then((list) => { setNodes(list); setNodesLoading(false); });
   }, [selectedSpace, source, connection?.status]);
 
-  // 切换数据源
+  // 统一刷新：根据当前数据源智能刷新
   const switchSource = (s: SourceType) => {
     setSource(s);
   };
@@ -344,6 +344,17 @@ export function FeishuPanel({ app }: { app: App }) {
     }
     setDeepScanning(false);
   }, [buildProjectSkeleton]);
+
+  // 统一刷新：根据当前数据源智能刷新
+  const unifiedRefresh = useCallback(() => {
+    if (source === 'wiki') {
+      initConnection();
+    } else if (source === 'drive') {
+      doDeepScan();
+    } else if (source === 'minutes') {
+      doLoadMinutes();
+    }
+  }, [source, initConnection, doDeepScan, doLoadMinutes]);
 
   // 切换到项目/类型视图时：有缓存直接用，无缓存才自动扫
   useEffect(() => {
@@ -436,13 +447,13 @@ export function FeishuPanel({ app }: { app: App }) {
           <button className={`mswb-sort-btn ${source === 'wiki' ? 'active' : ''}`} onClick={() => switchSource('wiki')}>📚 知识库</button>
           <button className={`mswb-sort-btn ${source === 'drive' ? 'active' : ''}`} onClick={() => switchSource('drive')}>☁️ 云盘</button>
           <button className={`mswb-sort-btn ${source === 'minutes' ? 'active' : ''}`} onClick={() => { switchSource('minutes'); if (minutes.length === 0) doLoadMinutes(); }}>🎙️ 纪要</button>
-          <button className="mswb-sort-btn" onClick={initConnection} title="刷新全部数据" style={{ marginLeft: 4 }}>🔄</button>
+          <button className="mswb-sort-btn" onClick={unifiedRefresh} title="刷新当前数据源" style={{ marginLeft: 4 }}>🔄</button>
         </div>
       </div>
 
       {/* 主体 */}
       {source === 'minutes' ? (
-        <MinutesListView minutes={minutes} loading={minutesLoading} onRefresh={doLoadMinutes} />
+        <MinutesListView minutes={minutes} loading={minutesLoading} />
       ) : (
       <div className="mswb-feishu-body">
         <div className="mswb-feishu-spaces">
@@ -493,7 +504,6 @@ export function FeishuPanel({ app }: { app: App }) {
                   lastSync={lastSync}
                   selectedKey={selectedProject}
                   onSelect={(key) => setSelectedProject(key)}
-                  onRescan={doDeepScan}
                   useDrawer={true}
                 />
               ) : (
@@ -505,7 +515,6 @@ export function FeishuPanel({ app }: { app: App }) {
                   lastSync={lastSync}
                   selectedKey={selectedProject}
                   onSelect={(key) => setSelectedProject(key)}
-                  onRescan={doDeepScan}
                   useDrawer={false}
                 />
               )}
@@ -694,7 +703,7 @@ function DriveTree({ files, loading, folderStack, onEnterFolder, onNavigateBread
 }
 
 // ===== Drive 项目列表（左栏）— 抽屉式按系统类别分组 =====
-function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync, selectedKey, onSelect, onRescan, useDrawer = true }: {
+function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync, selectedKey, onSelect, useDrawer = true }: {
   groups: DriveProjectGroup[];
   scanning: boolean;
   scanProgress: { scanned: number; total: number };
@@ -702,7 +711,6 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
   lastSync: string | null;
   selectedKey: string | null;
   onSelect: (key: string) => void;
-  onRescan: () => void;
   useDrawer?: boolean;
 }) {
   const syncHint = lastSync ? (() => {
@@ -813,7 +821,6 @@ function DriveProjectList({ groups, scanning, scanProgress, truncated, lastSync,
         {groups.length} 组 · {totalFiles} 文件
         {syncHint && <span style={{ marginLeft: 4 }}>· {syncHint}</span>}
         {truncated && <span style={{ color: 'var(--text-warning)', marginLeft: 4 }}>（已达上限）</span>}
-        {totalFiles > 0 && <button className="mswb-sort-btn" style={{ marginLeft: 8, fontSize: 10, padding: '1px 6px' }} onClick={onRescan} title="重新扫描">🔄 刷新</button>}
       </div>
 
       {/* 抽屉式类别 */}
@@ -1060,17 +1067,15 @@ function TypeEmoji({ emoji }: { emoji: string }) {
 }
 
 // ===== 智能纪要全页列表 =====
-function MinutesListView({ minutes, loading, onRefresh }: {
+function MinutesListView({ minutes, loading }: {
   minutes: MeetingMinute[];
   loading: boolean;
-  onRefresh: () => void;
 }) {
   return (
     <div className="mswb-feishu-body">
       <div className="mswb-feishu-docs" style={{ flex: 1 }}>
         <div className="mswb-feishu-section-title" style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>🎙️ 智能纪要 <span className="mswb-badge" style={{ marginLeft: 6 }}>{minutes.filter(m => m.type === '智能纪要').length}</span></span>
-          <button className="mswb-sort-btn" onClick={onRefresh} style={{ fontSize: 11 }}>🔄 刷新</button>
         </div>
         {loading ? (
           <div className="mswb-feishu-empty">加载中...</div>

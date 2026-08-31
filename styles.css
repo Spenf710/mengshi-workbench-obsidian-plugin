@@ -2775,6 +2775,7 @@
   height: 100%;
   overflow: hidden;
   background: var(--background-primary);
+  position: relative; /* 弹窗定位参照 */
 }
 
 /* 顶部栏 */
@@ -3093,6 +3094,136 @@
 .mswb-session-badge.source-cwd { color: var(--text-muted); }
 .mswb-session-badge.source-none { color: var(--text-faint); }
 
+/* 入口来源 badge */
+.mswb-session-badge.entry-obsidian { color: #2e8b57; }
+.mswb-session-badge.entry-cmd { color: #8b4513; }
+
+/* 标题编辑输入框 */
+.mswb-session-title-input {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border: 1px solid var(--interactive-accent);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  outline: none;
+  min-width: 0;
+}
+
+/* 可折叠分组标题 */
+.mswb-sessions-group-collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+.mswb-sessions-group-collapsible:hover {
+  color: var(--interactive-accent);
+}
+.mswb-sessions-group-arrow {
+  display: inline-block;
+  width: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mswb-session-card.archived {
+  border-color: var(--color-orange, #e67e22);
+  opacity: 0.85;
+}
+
+.mswb-session-archived-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--color-orange, #e67e22);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 标题区操作按钮（正方形小图标） */
+.mswb-session-icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.4;
+  transition: opacity 0.15s, border-color 0.15s, background 0.15s;
+  vertical-align: middle;
+  line-height: 1;
+}
+.mswb-session-icon-btn:hover {
+  opacity: 1;
+  border-color: var(--background-modifier-border);
+  background: var(--background-modifier-hover);
+}
+
+/* 标题右侧操作按钮组 */
+.mswb-session-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* 会话移动项目模态框（独立命名空间，避免与 .mswb-modal 插件弹窗样式冲突）
+   position: absolute — 相对于 .mswb-sessions 插件区域居中，而非整个窗口 */
+.mswb-session-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.08);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mswb-session-modal {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  min-width: 240px;
+  max-width: 360px;
+  max-height: 60vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.mswb-session-modal-title {
+  padding: 12px 14px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.mswb-session-modal-body {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.mswb-session-move-item {
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.mswb-session-move-item:hover {
+  background: var(--background-modifier-hover);
+}
+
 .mswb-session-proj {
   font-size: 11px;
   color: var(--text-muted);
@@ -3403,4 +3534,17 @@
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 0.9em;
+}
+
+/* ===== 弹窗防闪烁 =====
+   Obsidian 原生 Modal 打开时自带 scale+fade 动画（在窗口中央播），
+   若用 JS 改动位置会产生"先居中→再跳转"的闪烁。
+   禁止动画后弹窗原地出现，无跳变。 */
+.mswb-modal-noflicker {
+  animation: none !important;
+  transition: none !important;
+}
+.mswb-modal-noflicker .modal {
+  animation: none !important;
+  transform: none !important;
 }

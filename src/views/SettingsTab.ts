@@ -170,6 +170,15 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           .onChange((v) => { sessionText.claudeCliPath = v; });
       });
 
+    new Setting(containerEl)
+      .setName('会话存档目录')
+      .setDesc('存档会话的存放路径，留空时默认 ~/.claude/projects/_archived')
+      .addText((t) => {
+        t.setValue(sessionCfg.archiveDir)
+          .setPlaceholder('留空使用默认路径')
+          .onChange((v) => { sessionText.archiveDir = v; });
+      });
+
     // ===== 飞书 =====
     const feishuCfg = { ...getFeishuConfig() };
     const feishuText: any = {};
@@ -199,6 +208,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           await setSessionConfig({
             sessionRootDir: sessionText.sessionRootDir ?? '',
             claudeCliPath: sessionText.claudeCliPath ?? '',
+            archiveDir: sessionText.archiveDir ?? '',
           });
           await setFeishuConfig({
             larkCliPath: feishuText.larkCliPath ?? '',
@@ -215,7 +225,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
         .setWarning()
         .onClick(async () => {
           await resetConfig();
-          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '' });
+          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '' });
           await setFeishuConfig({ larkCliPath: '' });
           this.config = { ...getConfig() };
           this.display();

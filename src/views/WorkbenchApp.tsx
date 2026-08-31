@@ -118,19 +118,6 @@ export function WorkbenchApp({ app }: { app: App }) {
         </button>
         <button
           className="mswb-fab-btn"
-          onClick={() => {
-            const growthPlugin = (app as any).plugins?.plugins?.['mengshi-growth'];
-            if (growthPlugin) {
-              growthPlugin.activateView();
-            }
-          }}
-          title="打开生长 — AI 知识网络工具"
-        >
-          <span className="mswb-fab-icon">🌱</span>
-          <span className="mswb-fab-label">生长</span>
-        </button>
-        <button
-          className="mswb-fab-btn"
           onClick={() => setRefreshKey((k) => k + 1)}
           title="刷新当前视图"
           style={{ marginLeft: 'auto' }}

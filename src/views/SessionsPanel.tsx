@@ -12,12 +12,13 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
 import { spawn } from 'child_process';
-import { scanSessions, parseSessionTurns, type SessionCard, type SessionDetail, type TurnBlock } from '../data/sessionScanner';
+import { scanSessions, scanAllSessions, parseSessionTurns, archiveSessionFile, getArchivedSessionIds, type SessionCard, type SessionDetail, type TurnBlock } from '../data/sessionScanner';
 import { scanProjects, type ProjectInfo } from '../data/projectScanner';
+import { getSessionArchiveDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride } from '../data/settings';
 
 // ===== 类型 =====
 type SidebarTab = 'projects' | 'general';
-type FilterKey = 'all' | 'today' | 'threeDays' | 'week';
+type FilterKey = 'all' | 'daily' | 'today' | 'threeDays' | 'week' | 'archived' | 'turn5' | 'turn20' | 'turn20plus';
 
 interface MenuGroup {
   root: string;
@@ -268,10 +269,32 @@ function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: Session
 }
 
 // ===== 会话卡片 =====
-function SessionCardView({ card, onOpen, onOpenInClaude }: { card: SessionCard; onOpen: (c: SessionCard) => void; onOpenInClaude: (c: SessionCard) => void }) {
+function SessionCardView({ card, archived, titleOverride, effectiveProjectPath, onOpen, onOpenInClaude, onArchive, onTitleChange, onMoveClick }: { card: SessionCard; archived: boolean; titleOverride: string | null; effectiveProjectPath: string | null; onOpen: (c: SessionCard) => void; onOpenInClaude: (c: SessionCard) => void; onArchive: (c: SessionCard) => void; onTitleChange: (sessionId: string, title: string) => void; onMoveClick: (c: SessionCard) => void }) {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayTitle = titleOverride || card.aiTitle;
+
+  const startEdit = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setTitleDraft(displayTitle);
+    setEditingTitle(true);
+    setTimeout(() => inputRef.current?.select(), 50);
+  }, [displayTitle]);
+
+  const saveTitle = useCallback(() => {
+    setEditingTitle(false);
+    if (titleDraft.trim() && titleDraft.trim() !== displayTitle) {
+      onTitleChange(card.sessionId, titleDraft.trim());
+    }
+  }, [titleDraft, displayTitle, card.sessionId, onTitleChange]);
+
+  // 点击外部关闭移动菜单（模态框自带 overlay 点击关闭，此处无需额外处理）
+
   const timeLabel = useMemo(() => {
-    if (!card.lastTime) return '';
-    const d = new Date(card.lastTime);
+    if (!card.startTime) return '';
+    const d = new Date(card.startTime);
     if (isNaN(d.getTime())) return card.lastTime;
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
@@ -283,14 +306,51 @@ function SessionCardView({ card, onOpen, onOpenInClaude }: { card: SessionCard; 
   const sourceLabel: Record<string, string> = {
     'at-ref': '@引用',
     wikilink: '[[链接]]',
-    cwd: 'cwd',
+    cwd: '工作目录',
     none: '未归类',
   };
 
+  const entryLabel: Record<string, string> = {
+    Obsidian: 'Obsidian',
+    '命令行': '命令行',
+  };
+
+  // 项目归属标签（取项目名，不含路径，跟随 override）
+  const projectLabel = useMemo(() => {
+    if (!effectiveProjectPath) return null;
+    if (effectiveProjectPath === '__daily__') return '日常';
+    const segments = effectiveProjectPath.split('/');
+    const folderName = segments[segments.length - 1];
+    return folderName.replace(/^\d+\.\s*/, '');
+  }, [effectiveProjectPath]);
+
   return (
-    <div className="mswb-session-card">
-      <div className="mswb-session-head" onClick={() => onOpen(card)}>
-        <span className="mswb-session-title">{card.aiTitle}</span>
+    <div className={`mswb-session-card${archived ? ' archived' : ''}`}>
+      <div className="mswb-session-head" onClick={(e) => { if (!editingTitle) onOpen(card); }}>
+        {editingTitle ? (
+          <input
+            ref={inputRef}
+            className="mswb-session-title-input"
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') setEditingTitle(false); }}
+            onBlur={saveTitle}
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+          />
+        ) : (
+          <span className="mswb-session-title">
+            {displayTitle}
+            <button className="mswb-session-icon-btn" onClick={startEdit} title="编辑标题">✏️</button>
+          </span>
+        )}
+        <span className="mswb-session-head-actions">
+          <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onMoveClick(card); }} title="移动项目">📂</button>
+          {!archived && (
+            <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onArchive(card); }} title="存档">📦</button>
+          )}
+          {archived && <span className="mswb-session-archived-badge">📦</span>}
+        </span>
       </div>
       <div className="mswb-session-meta-row" onClick={() => onOpen(card)}>
         <span className="mswb-session-time">{timeLabel}</span>
@@ -300,14 +360,17 @@ function SessionCardView({ card, onOpen, onOpenInClaude }: { card: SessionCard; 
         <span className={`mswb-session-badge source-${card.projectRef.source}`}>
           {sourceLabel[card.projectRef.source] || card.projectRef.source}
         </span>
-        {card.projectRef.projectPath && (
-          <span className="mswb-session-proj">{card.projectRef.projectPath}</span>
+        <span className={`mswb-session-badge entry-${card.entrySource === 'Obsidian' ? 'obsidian' : 'cmd'}`}>
+          {entryLabel[card.entrySource] || card.entrySource}
+        </span>
+        {projectLabel && (
+          <span className="mswb-session-badge mswb-session-badge-project">{projectLabel}</span>
         )}
       </div>
       {card.firstPrompt && (
         <div className="mswb-session-prompt" onClick={() => onOpen(card)}>{card.firstPrompt}</div>
       )}
-      <div className="mswb-session-actions">
+      <div className="mswb-session-actions" style={{ position: 'relative' }}>
         <button className="mswb-session-action-btn" onClick={(e) => { e.stopPropagation(); onOpen(card); }}>查看详情</button>
         <button className="mswb-session-action-btn" onClick={(e) => { e.stopPropagation(); onOpenInClaude(card); }}>在 Claude 中打开</button>
       </div>
@@ -328,24 +391,39 @@ export function SessionsPanel({ app }: { app: App }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>({});
+  const [sessionProjectOverrides, setSessionProjectOverrides] = useState<Record<string, string | null>>({});
+  const [moveTarget, setMoveTarget] = useState<SessionCard | null>(null);
 
   // 扫描会话
   const doScan = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      const projectList = await scanProjects(app);
+      const knownPaths = projectList.map((p) => p.folderPath);
       const vaultPath = (app.vault.adapter as any).getBasePath?.();
-      if (!vaultPath || typeof vaultPath !== 'string') {
-        setError('无法获取 vault 路径');
-        setLoading(false);
-        return;
-      }
-      const [projectList, result] = await Promise.all([
-        scanProjects(app),
-        scanSessions(vaultPath, (await scanProjects(app)).map((p) => p.folderPath)),
+      // 全量扫描：所有 projects 目录下的会话，不限入口
+      const [result, archIds] = await Promise.all([
+        scanAllSessions(knownPaths, vaultPath),
+        getArchivedSessionIds(getSessionArchiveDir()),
       ]);
       setProjects(projectList);
       setSessions(result.sessions);
+      setArchivedIds(archIds);
+      // 加载标题覆盖
+      const overrides: Record<string, string> = {};
+      const projOverrides: Record<string, string | null> = {};
+      for (const s of result.sessions) {
+        const ov = getSessionTitleOverride(s.sessionId);
+        if (ov) overrides[s.sessionId] = ov;
+        const po = getSessionProjectOverride(s.sessionId);
+        if (po !== undefined) projOverrides[s.sessionId] = po;
+      }
+      setTitleOverrides(overrides);
+      setSessionProjectOverrides(projOverrides);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -396,24 +474,91 @@ export function SessionsPanel({ app }: { app: App }) {
     }
   }, []);
 
-  // 项目分组
+  // 存档
+  const handleArchive = useCallback(async (card: SessionCard) => {
+    const archiveDir = getSessionArchiveDir();
+    const result = await archiveSessionFile(card.filePath, archiveDir);
+    if (result.success) {
+      new Notice(`✅ 已存档：${card.aiTitle}`);
+      // 更新存档集合
+      setArchivedIds((prev) => new Set(prev).add(card.sessionId));
+    } else {
+      new Notice(`❌ 存档失败：${result.archivedPath}`);
+    }
+  }, []);
+
+  // 标题修改
+  const handleTitleChange = useCallback(async (sessionId: string, title: string) => {
+    await setSessionTitleOverride(sessionId, title);
+    setTitleOverrides((prev) => ({ ...prev, [sessionId]: title }));
+  }, []);
+
+  // 左侧菜单项渲染
+  const projectCount = useCallback((path: string | null) => {
+    if (!path) return sessions.filter((s) => {
+      const ov = sessionProjectOverrides?.[s.sessionId];
+      const effective = ov !== undefined ? ov : s.projectRef.projectPath;
+      return effective === null;
+    }).length;
+    return sessions.filter((s) => {
+      const ov = sessionProjectOverrides?.[s.sessionId];
+      const effective = ov !== undefined ? ov : s.projectRef.projectPath;
+      return effective === path;
+    }).length;
+  }, [sessions, sessionProjectOverrides]);
+
+  // 折叠切换
+  const toggleGroup = useCallback((root: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(root)) next.delete(root);
+      else next.add(root);
+      return next;
+    });
+  }, []);
+
+  // 移动项目
+  const handleMoveProject = useCallback(async (sessionId: string, projectPath: string | null) => {
+    await setSessionProjectOverride(sessionId, projectPath);
+    setMoveTarget(null);
+    doScan();
+  }, [doScan]);
+
+  // 打开移动对话框
+  const openMoveDialog = useCallback((card: SessionCard) => {
+    setMoveTarget(card);
+  }, []);
+
+  // 项目分组（按会话数量降序排列）
   const menuGroups = useMemo<MenuGroup[]>(() => {
     const roots = ['项目管理-系统', '项目管理-车型', '日常工作-通用'];
     return roots.map((root) => ({
       root,
-      projects: projects.filter((p) => p.folderPath.startsWith(root + '/')),
+      projects: projects
+        .filter((p) => p.folderPath.startsWith(root + '/'))
+        .sort((a, b) => projectCount(b.folderPath) - projectCount(a.folderPath)),
     })).filter((g) => g.projects.length > 0);
   }, [projects]);
 
   // 右侧过滤
   const filteredSessions = useMemo(() => {
     let list = [...sessions];
+    // 用 override 覆盖 projectRef（如果存在）
     if (activeSidebarTab === 'projects') {
+      const effectiveProject = (s: SessionCard) => {
+        const ov = sessionProjectOverrides?.[s.sessionId];
+        if (ov === '__daily__') return '__daily__';
+        return ov !== undefined ? ov : s.projectRef.projectPath;
+      };
       if (selectedProject) {
-        list = list.filter((s) => s.projectRef.projectPath === selectedProject);
-      }
-      if (selectedFilter === 'none') {
-        list = list.filter((s) => s.projectRef.projectPath === null);
+        list = list.filter((s) => effectiveProject(s) === selectedProject);
+      } else if (selectedFilter === 'none') {
+        list = list.filter((s) => effectiveProject(s) === null);
+      } else if (selectedFilter === 'archived') {
+        list = list.filter((s) => archivedIds.has(s.sessionId));
+      } else if (selectedFilter === 'daily') {
+        // 日常：手动标记为 __daily__ 的会话
+        list = list.filter((s) => sessionProjectOverrides?.[s.sessionId] === '__daily__');
       }
     } else {
       // 通用 Tab
@@ -428,33 +573,40 @@ export function SessionsPanel({ app }: { app: App }) {
         const now = new Date();
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
         list = list.filter((s) => s.lastTime >= weekAgo);
+      } else if (selectedFilter === 'turn5') {
+        list = list.filter((s) => s.userTurns <= 5);
+      } else if (selectedFilter === 'turn20') {
+        list = list.filter((s) => s.userTurns > 5 && s.userTurns <= 20);
+      } else if (selectedFilter === 'turn20plus') {
+        list = list.filter((s) => s.userTurns > 20);
       }
     }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter((s) => s.aiTitle.toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q));
+      list = list.filter((s) => (titleOverrides[s.sessionId] || s.aiTitle).toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q));
     }
     return list;
-  }, [sessions, activeSidebarTab, selectedProject, selectedFilter, search]);
+  }, [sessions, activeSidebarTab, selectedProject, selectedFilter, search, archivedIds, titleOverrides]);
 
   // 当前标题
   const currentTitle = useMemo(() => {
     if (activeSidebarTab === 'projects') {
       if (selectedProject) return selectedProject.replace(/^[^/]+\//, '');
       if (selectedFilter === 'none') return '未归类会话';
+      if (selectedFilter === 'daily') return '日常会话';
+      if (selectedFilter === 'archived') return '已存档';
       return '全部会话';
     }
     if (selectedFilter === 'today') return '今日会话';
     if (selectedFilter === 'threeDays') return '近三日会话';
     if (selectedFilter === 'week') return '本周会话';
+    if (selectedFilter === 'turn5') return '≤5 轮提问';
+    if (selectedFilter === 'turn20') return '≤20 轮提问';
+    if (selectedFilter === 'turn20plus') return '20+ 轮提问';
     return '全部会话';
   }, [activeSidebarTab, selectedProject, selectedFilter]);
 
-  // 左侧菜单项渲染
-  const projectCount = (path: string | null) => {
-    if (!path) return sessions.filter((s) => s.projectRef.projectPath === null).length;
-    return sessions.filter((s) => s.projectRef.projectPath === path).length;
-  };
+  const archivedCount = useMemo(() => sessions.filter((s) => archivedIds.has(s.sessionId)).length, [sessions, archivedIds]);
 
   // 加载/空/错误占位
   const renderMain = () => {
@@ -485,15 +637,45 @@ export function SessionsPanel({ app }: { app: App }) {
     }
     return (
       <div className="mswb-sessions-grid">
-        {filteredSessions.map((s) => (
-          <SessionCardView key={s.sessionId} card={s} onOpen={openDetail} onOpenInClaude={openInClaude} />
-        ))}
+        {filteredSessions.map((s) => {
+            const ov = sessionProjectOverrides?.[s.sessionId];
+            const ep = ov !== undefined ? ov : s.projectRef.projectPath;
+            return (
+              <SessionCardView key={s.sessionId} card={s} archived={archivedIds.has(s.sessionId)} titleOverride={titleOverrides[s.sessionId] ?? null} effectiveProjectPath={ep} onOpen={openDetail} onOpenInClaude={openInClaude} onArchive={handleArchive} onTitleChange={handleTitleChange} onMoveClick={openMoveDialog} />
+            );
+          })}
       </div>
     );
   };
 
   return (
     <div className="mswb-sessions">
+      {/* 移动项目模态框（在顶层渲染，避免嵌套问题） */}
+      {moveTarget && (
+        <div className="mswb-session-modal-overlay" onClick={() => setMoveTarget(null)}>
+          <div className="mswb-session-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mswb-session-modal-title">移动到项目</div>
+            <div className="mswb-session-modal-body">
+              <div className="mswb-session-move-item" onClick={() => { handleMoveProject(moveTarget.sessionId, null); }}>
+                🗂️ 不归属
+              </div>
+              <div className="mswb-session-move-item" onClick={() => { handleMoveProject(moveTarget.sessionId, '__daily__'); }}>
+                📔 日常
+              </div>
+              {projects.map((p) => (
+                <div
+                  key={p.folderPath}
+                  className="mswb-session-move-item"
+                  onClick={() => { handleMoveProject(moveTarget.sessionId, p.folderPath); }}
+                >
+                  {p.emoji || '📁'} {p.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 详情视图优先 */}
       {detail ? (
         <SessionDetailView detail={detail} onBack={() => setDetail(null)} onOpenInClaude={openInClaude} />
@@ -534,23 +716,7 @@ export function SessionsPanel({ app }: { app: App }) {
               {/* 项目 Tab */}
               {activeSidebarTab === 'projects' && (
                 <div className="mswb-sessions-menu">
-                  {menuGroups.map((g) => (
-                    <div key={g.root} className="mswb-sessions-menu-group">
-                      <div className="mswb-sessions-menu-group-title">{g.root}</div>
-                      {g.projects.map((p) => (
-                        <div
-                          key={p.folderPath}
-                          className={`mswb-sessions-menu-item ${selectedProject === p.folderPath ? 'active' : ''}`}
-                          onClick={() => { setSelectedProject(p.folderPath); setSelectedFilter('all'); }}
-                        >
-                          <span className="mswb-sessions-menu-icon">{p.emoji || '📁'}</span>
-                          <span className="mswb-sessions-menu-name">{p.name}</span>
-                          <span className="mswb-sessions-menu-count">{projectCount(p.folderPath)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-
+                  {/* 顶部固定项：全部 / 未归类 / 已存档 */}
                   <div className="mswb-sessions-menu-group">
                     <div className="mswb-sessions-menu-item mswb-sessions-menu-all" onClick={() => { setSelectedProject(null); setSelectedFilter('all'); }}>
                       <span className="mswb-sessions-menu-icon">📆</span>
@@ -562,7 +728,44 @@ export function SessionsPanel({ app }: { app: App }) {
                       <span className="mswb-sessions-menu-name">未归类</span>
                       <span className="mswb-sessions-menu-count">{projectCount(null)}</span>
                     </div>
+                    <div className="mswb-sessions-menu-item" onClick={() => { setSelectedProject(null); setSelectedFilter('daily'); }}>
+                      <span className="mswb-sessions-menu-icon">📔</span>
+                      <span className="mswb-sessions-menu-name">日常</span>
+                      <span className="mswb-sessions-menu-count">{sessions.filter((s) => sessionProjectOverrides?.[s.sessionId] === '__daily__').length}</span>
+                    </div>
+                    <div className="mswb-sessions-menu-item" onClick={() => { setSelectedProject(null); setSelectedFilter('archived'); }}>
+                      <span className="mswb-sessions-menu-icon">📦</span>
+                      <span className="mswb-sessions-menu-name">已存档</span>
+                      <span className="mswb-sessions-menu-count">{archivedCount}</span>
+                    </div>
                   </div>
+
+                  {/* 项目分组（可折叠） */}
+                  {menuGroups.map((g) => {
+                    const isCollapsed = collapsedGroups.has(g.root);
+                    return (
+                      <div key={g.root} className="mswb-sessions-menu-group">
+                        <div
+                          className="mswb-sessions-menu-group-title mswb-sessions-group-collapsible"
+                          onClick={() => toggleGroup(g.root)}
+                        >
+                          <span className="mswb-sessions-group-arrow">{isCollapsed ? '▸' : '▾'}</span>
+                          {g.root}
+                        </div>
+                        {!isCollapsed && g.projects.map((p) => (
+                          <div
+                            key={p.folderPath}
+                            className={`mswb-sessions-menu-item ${selectedProject === p.folderPath ? 'active' : ''}`}
+                            onClick={() => { setSelectedProject(p.folderPath); setSelectedFilter('all'); }}
+                          >
+                            <span className="mswb-sessions-menu-icon">{p.emoji || '📁'}</span>
+                            <span className="mswb-sessions-menu-name">{p.name}</span>
+                            <span className="mswb-sessions-menu-count">{projectCount(p.folderPath)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -583,6 +786,9 @@ export function SessionsPanel({ app }: { app: App }) {
                       { key: 'today', icon: '📅', label: '今日' },
                       { key: 'threeDays', icon: '📅', label: '近三日' },
                       { key: 'week', icon: '📅', label: '本周' },
+                      { key: 'turn5', icon: '🔄', label: '≤5 轮' },
+                      { key: 'turn20', icon: '🔄', label: '≤20 轮' },
+                      { key: 'turn20plus', icon: '🔄', label: '20+ 轮' },
                     ].map((item) => (
                       <div
                         key={item.key}

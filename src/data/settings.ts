@@ -45,11 +45,14 @@ export interface SessionConfig {
   sessionRootDir: string;
   /** claude CLI 路径（空 = 自动检测，loop 功能用） */
   claudeCliPath: string;
+  /** 会话存档目录（绝对路径），空 = 默认 ~/.claude/projects/_archived */
+  archiveDir: string;
 }
 
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
   sessionRootDir: '',
   claudeCliPath: '',
+  archiveDir: '',
 };
 
 export interface ProjectMetaOverride {
@@ -109,6 +112,10 @@ interface PluginData {
   domainIcons?: Record<string, string>;
   feishu?: FeishuConfig;
   session?: SessionConfig;
+  /** 会话标题手动覆盖：sessionId → 自定义标题 */
+  sessionTitleOverrides?: Record<string, string>;
+  /** 会话项目归属手动覆盖：sessionId → projectPath */
+  sessionProjectOverrides?: Record<string, string>;
 }
 
 export function getConfig(): PluginConfig {
@@ -302,11 +309,54 @@ export function getSessionRootDir(): string {
   return path.join(os.homedir(), '.claude', 'projects');
 }
 
+/** 解析会话存档目录：用户配置 > 默认 ~/.claude/projects/_archived */
+export function getSessionArchiveDir(): string {
+  const cfg = getSessionConfig();
+  if (cfg.archiveDir) return cfg.archiveDir;
+  return path.join(getSessionRootDir(), '_archived');
+}
+
 export function getSessionConfig(): SessionConfig {
   return { ...DEFAULT_SESSION_CONFIG, ...dataCache.session };
 }
 
 export async function setSessionConfig(config: Partial<SessionConfig>): Promise<void> {
   dataCache.session = { ...DEFAULT_SESSION_CONFIG, ...dataCache.session, ...config };
+  await persist();
+}
+
+// ===== 会话标题覆盖 =====
+
+export function getSessionTitleOverride(sessionId: string): string | null {
+  return dataCache.sessionTitleOverrides?.[sessionId] ?? null;
+}
+
+export async function setSessionTitleOverride(sessionId: string, title: string): Promise<void> {
+  if (!dataCache.sessionTitleOverrides) dataCache.sessionTitleOverrides = {};
+  if (title.trim()) {
+    dataCache.sessionTitleOverrides[sessionId] = title.trim();
+  } else {
+    delete dataCache.sessionTitleOverrides[sessionId];
+  }
+  await persist();
+}
+
+// ===== 会话项目归属覆盖 =====
+
+export function getSessionProjectOverride(sessionId: string): string | null | undefined {
+  if (dataCache.sessionProjectOverrides && sessionId in dataCache.sessionProjectOverrides) {
+    return dataCache.sessionProjectOverrides[sessionId];
+  }
+  return undefined; // undefined = 未设置，null = 显式设为不归属
+}
+
+export async function setSessionProjectOverride(sessionId: string, projectPath: string | null): Promise<void> {
+  if (!dataCache.sessionProjectOverrides) dataCache.sessionProjectOverrides = {};
+  if (projectPath) {
+    dataCache.sessionProjectOverrides[sessionId] = projectPath;
+  } else {
+    // 显式设为 null 表示"不归属"，区别于 undefined（未设置）
+    dataCache.sessionProjectOverrides[sessionId] = null;
+  }
   await persist();
 }

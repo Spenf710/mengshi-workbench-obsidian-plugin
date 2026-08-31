@@ -1,5 +1,6 @@
 import { App, Modal, Setting, TFile, Notice } from 'obsidian';
 import { getAllCategories, getProjectMetaOverrides, getConfig } from '../data/settings';
+import { centerModalInWorkbench } from './modalHelpers';
 
 interface ProjectChoice {
   name: string;
@@ -96,6 +97,7 @@ export class QuickTodoModal extends Modal {
     contentEl.addClass('mswb-modal');
 
     contentEl.createEl('h3', { text: '✅ 快捷待办录入' });
+    centerModalInWorkbench(this);
 
     // 待办内容（占满整行）
     const taskRow = contentEl.createDiv({ cls: 'mswb-modal-fullrow' });

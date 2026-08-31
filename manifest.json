@@ -1,9 +1,9 @@
 {
   "id": "mengshi-workbench",
   "name": "猛士驾驶舱",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "minAppVersion": "1.4.0",
-  "description": "猛士驾驶舱——日历、项目、待办、排期、生长、飞书一体化工作面板",
+  "description": "猛士驾驶舱——日历、项目、待办、排期、飞书、会话一体化工作面板",
   "author": "孙鹏飞",
   "isDesktopOnly": false
 }

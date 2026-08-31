@@ -1,5 +1,6 @@
 import { App, Modal, Setting, TFile, Notice } from 'obsidian';
 import { getConfig } from '../data/settings';
+import { centerModalInWorkbench } from './modalHelpers';
 
 const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -75,6 +76,7 @@ export class QuickDiaryModal extends Modal {
     await this.loadDiary(this.date);
 
     contentEl.createEl('h3', { text: this.exists ? '✏️ 编辑日记' : '✏️ 创建日记' });
+    centerModalInWorkbench(this);
 
     // 日期（切换时重新加载）
     new Setting(contentEl)

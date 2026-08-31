@@ -43,6 +43,10 @@ export interface SessionCard {
   projectRef: ProjectRef;
   /** .jsonl 文件绝对路径 */
   filePath: string;
+  /** 会话发起入口：Obsidian / 命令行 / 未知 */
+  entrySource: string;
+  /** 会话内调用的 skill 名集合（判断日常操作：日志/周报等） */
+  skills: string[];
 }
 
 // ===== Vault 路径编码 =====
@@ -171,6 +175,28 @@ export interface SessionRaw {
   toolCalls: number;
   cwd: string;
   textChunks: string[];
+  /** 会话内调用的 skill 名集合（识别日志/周报等日常操作） */
+  skills: string[];
+}
+
+// ===== 日常操作 skill 识别 =====
+// 命中这些 skill 的会话归入"日常"抽屉：日志、周报、日报、站会等
+const DAILY_SKILLS = ['work-log-refine', 'weekly-report', 'lark-workflow-standup-report', 'lark-workflow-meeting-summary'];
+
+/** 从一行内容提取 <command-name>/xxx</command-name> 或 Skill("xxx") 调用的 skill 名 */
+function extractSkillNames(content: unknown): string[] {
+  const names: string[] = [];
+  const str = typeof content === 'string' ? content : JSON.stringify(content ?? '');
+  for (const m of str.matchAll(/command-name>(.+?)<\/command-name/g)) {
+    names.push(m[1].trim());
+  }
+  for (const m of str.matchAll(/Skill\(\s*["'](.+?)["']\s*\)/g)) {
+    names.push(m[1].trim());
+  }
+  for (const sk of DAILY_SKILLS) {
+    if (str.includes(sk)) names.push(sk);
+  }
+  return names;
 }
 
 /** 流式按行解析单个 .jsonl，抽元信息 + 文本块（供项目归属分析） */
@@ -185,6 +211,7 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
     let cwd = '';
     let firstUserFound = false;
     const textChunks: string[] = [];
+    const skills: string[] = [];
 
     const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
     let buf = '';
@@ -209,6 +236,11 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
         }
         if (obj.cwd && !cwd) cwd = obj.cwd;
         if (t === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle as string;
+        // 提取 skill 调用（user 指令 + assistant tool_use）
+        if (t === 'user' || t === 'assistant') {
+          const found = extractSkillNames(obj.message?.content);
+          for (const n of found) if (!skills.includes(n)) skills.push(n);
+        }
         if (t === 'user') {
           // 跳过纯 tool_result 回传 + 系统注入的 skill/指令消息
           if (!isToolResultTurn(obj.message?.content) && !isSystemInjected(obj)) {
@@ -243,7 +275,7 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
           /* ignore */
         }
       }
-      resolve({ aiTitle, firstPrompt, startTime, lastTime, userTurns, toolCalls, cwd, textChunks });
+      resolve({ aiTitle, firstPrompt, startTime, lastTime, userTurns, toolCalls, cwd, textChunks, skills });
     });
 
     stream.on('error', () => resolve(null));
@@ -410,6 +442,9 @@ export async function scanSessions(
       if (!raw) return null;
       const sessionId = f.replace(/\.jsonl$/, '');
       const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
+      // 判断入口来源：cwd 编码后是否匹配 vault 目录名
+      const encodedCwd = encodeVaultPath(raw.cwd);
+      const entrySource = encodedCwd.startsWith(vaultDirName) ? 'Obsidian' : '命令行';
       const card: SessionCard = {
         sessionId,
         aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
@@ -421,6 +456,8 @@ export async function scanSessions(
         cwd: raw.cwd,
         projectRef,
         filePath,
+        entrySource,
+        skills: raw.skills,
       };
       return card;
     }),
@@ -471,6 +508,8 @@ export async function scanSessionsFallback(
       if (!raw) { extraFailed++; continue; }
       if (!raw.cwd.includes(vaultPath)) continue; // 只保留 cwd 匹配当前 vault 的
       const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
+      // 来自其他目录的按 cwd 匹配 → 命令行
+      const entrySource = '命令行';
       extra.push({
         sessionId: f.replace(/\.jsonl$/, ''),
         aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
@@ -482,6 +521,8 @@ export async function scanSessionsFallback(
         cwd: raw.cwd,
         projectRef,
         filePath,
+        entrySource,
+        skills: raw.skills,
       });
     }
   }
@@ -495,16 +536,20 @@ export async function scanSessionsFallback(
 /**
  * 一次性扫描所有 projects 子目录下的所有会话（跨 vault 全量）。
  * 用于用户想看到所有历史会话，不限制当前 vault。
+ * @param currentVaultPath 当前 vault 绝对路径，用于判断入口来源
  */
 export async function scanAllSessions(
   knownProjectPaths: string[],
+  currentVaultPath?: string,
 ): Promise<ScanSessionsResult> {
   const root = getSessionRootDir();
   const allDirs = await fs.promises.readdir(root).catch(() => [] as string[]);
   const sessions: SessionCard[] = [];
   let failed = 0;
+  const currentEncoded = currentVaultPath ? encodeVaultPath(currentVaultPath) : '';
 
   for (const d of allDirs) {
+    if (d === '_archived') continue; // 跳过存档目录
     const dirPath = path.join(root, d);
     try {
       const st = await fs.promises.stat(dirPath);
@@ -517,6 +562,8 @@ export async function scanAllSessions(
       const raw = await parseSessionFile(filePath);
       if (!raw) { failed++; continue; }
       const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
+      // 入口来源：目录名匹配当前 vault 编码 → Obsidian，否则 → 命令行
+      const entrySource = d === currentEncoded ? 'Obsidian' : '命令行';
       sessions.push({
         sessionId: f.replace(/\.jsonl$/, ''),
         aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
@@ -528,10 +575,64 @@ export async function scanAllSessions(
         cwd: raw.cwd,
         projectRef,
         filePath,
+        entrySource,
+        skills: raw.skills,
       });
     }
   }
 
   sessions.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
   return { vaultDirName: '*all*', sessions, scanned: sessions.length, failed };
+}
+
+// ===== 存档功能 =====
+
+/**
+ * 将会话 .jsonl 文件复制到存档目录（不删除源文件）。
+ * 存档文件名格式：<sessionId>_<YYYYMMDD>.jsonl
+ */
+export async function archiveSessionFile(
+  filePath: string,
+  archiveDir: string,
+): Promise<{ success: boolean; archivedPath: string }> {
+  try {
+    // 确保存档目录存在
+    fs.mkdirSync(archiveDir, { recursive: true });
+
+    // 提取 sessionId
+    const basename = path.basename(filePath).replace(/\.jsonl$/, '');
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const archivedName = `${basename}_${dateStr}.jsonl`;
+    const archivedPath = path.join(archiveDir, archivedName);
+
+    // 复制文件
+    fs.copyFileSync(filePath, archivedPath);
+
+    return { success: true, archivedPath };
+  } catch (e: any) {
+    return { success: false, archivedPath: e?.message || String(e) };
+  }
+}
+
+/**
+ * 扫描存档目录，返回已存档的 sessionId 集合。
+ * 存档文件名格式：<sessionId>_<YYYYMMDD>.jsonl
+ */
+export async function getArchivedSessionIds(archiveDir: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    const entries = await fs.promises.readdir(archiveDir);
+    for (const f of entries) {
+      if (!f.endsWith('.jsonl')) continue;
+      // 去掉 _YYYYMMDD.jsonl 后缀，提取原始 sessionId
+      const match = f.match(/^(.+?)_\d{8}\.jsonl$/);
+      if (match) {
+        ids.add(match[1]);
+      }
+    }
+  } catch {
+    // 目录不存在时静默处理
+  }
+  return ids;
 }
