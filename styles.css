@@ -527,7 +527,8 @@
 .mswb-cal-table-wrap {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .mswb-cal-table {
@@ -2808,6 +2809,13 @@
   background: var(--background-modifier-hover);
 }
 
+/* 顶部操作按钮组 */
+.mswb-sessions-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 主体 */
 .mswb-sessions-body {
   display: flex;
@@ -3164,6 +3172,14 @@
   opacity: 1;
   border-color: var(--background-modifier-border);
   background: var(--background-modifier-hover);
+}
+
+/* 危险操作按钮（删除会话）— hover 红色提示防误触 */
+.mswb-session-icon-btn.mswb-session-icon-danger:hover {
+  opacity: 1;
+  border-color: var(--color-red, #e74c3c);
+  background: color-mix(in srgb, var(--color-red, #e74c3c) 12%, transparent);
+  color: var(--color-red, #e74c3c);
 }
 
 /* 标题右侧操作按钮组 */

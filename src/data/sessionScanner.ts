@@ -10,7 +10,32 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getSessionRootDir } from './settings';
+import { getSessionRootDir, getSessionArchiveDir } from './settings';
+
+// ===== 扫描缓存（性能优化：增量扫描） =====
+// 记录每个 .jsonl 文件的 文件大小 + 最后修改时间 → 未变化的文件跳过重新解析
+// 元信息（标题/首问/轮数/项目归属）直接从缓存读取，避免重复 IO 解析
+interface JsonlMeta {
+  aiTitle: string;
+  firstPrompt: string;
+  startTime: string;
+  lastTime: string;
+  userTurns: number;
+  toolCalls: number;
+  cwd: string;
+  projectPath: string | null;
+  projectSource: string;
+  projectEvidence: string;
+  entrySource: string;
+  skills: string[];
+}
+const fileCache = new Map<string, { size: number; mtimeMs: number; meta: JsonlMeta | null }>();
+
+/** 校验缓存是否可用（文件大小 + mtime 未变） */
+function cacheValid(key: string, size: number, mtimeMs: number): boolean {
+  const c = fileCache.get(key);
+  return !!c && c.size === size && c.mtimeMs === mtimeMs;
+}
 
 // ===== 类型定义 =====
 
@@ -236,22 +261,32 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
         }
         if (obj.cwd && !cwd) cwd = obj.cwd;
         if (t === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle as string;
-        // 提取 skill 调用（user 指令 + assistant tool_use）
         if (t === 'user' || t === 'assistant') {
-          const found = extractSkillNames(obj.message?.content);
-          for (const n of found) if (!skills.includes(n)) skills.push(n);
+          // 性能优化：tool_result 回传行（user 消息中的巨型 content）不参与 skill 提取，
+          // 避免对超大对象 JSON.stringify + 正则扫描
+          const content = obj.message?.content;
+          const isToolTurn = isToolResultTurn(content);
+          if (!isToolTurn) {
+            const found = extractSkillNames(content);
+            for (const n of found) if (!skills.includes(n)) skills.push(n);
+          }
         }
         if (t === 'user') {
           // 跳过纯 tool_result 回传 + 系统注入的 skill/指令消息
           if (!isToolResultTurn(obj.message?.content) && !isSystemInjected(obj)) {
             userTurns++;
             const text = extractText(obj.message?.content);
-            if (text) {
+            // 性能优化：textChunks 仅保留前 3 条，足够做项目归属三线索匹配（@引用/[[链接]]/标题）
+            // 此前会把整场对话全量文本驻留内存（大会话可累积数 MB）
+            if (text && textChunks.length < 3) {
               textChunks.push(text);
               if (!firstUserFound) {
                 firstPrompt = text.slice(0, 200);
                 firstUserFound = true;
               }
+            } else if (!firstPrompt && text) {
+              // 前 3 条已满时，firstPrompt 取后续第一条（避免丢失首问预览）
+              firstPrompt = text.slice(0, 200);
             }
           }
         } else if (t === 'assistant') {
@@ -438,26 +473,55 @@ export async function scanSessions(
   const results = await Promise.all(
     jsonlFiles.map(async (f) => {
       const filePath = path.join(vaultDir, f);
-      const raw = await parseSessionFile(filePath);
-      if (!raw) return null;
       const sessionId = f.replace(/\.jsonl$/, '');
-      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
-      // 判断入口来源：cwd 编码后是否匹配 vault 目录名
-      const encodedCwd = encodeVaultPath(raw.cwd);
-      const entrySource = encodedCwd.startsWith(vaultDirName) ? 'Obsidian' : '命令行';
+
+      // 增量：文件未变化 → 直接用缓存，不重解析
+      let st: fs.Stats;
+      try { st = await fs.promises.stat(filePath); } catch { return null; }
+      let meta: JsonlMeta | null;
+      if (cacheValid(filePath, st.size, st.mtimeMs)) {
+        meta = fileCache.get(filePath)!.meta;
+      } else {
+        const raw = await parseSessionFile(filePath);
+        // 强制在建卡前完成项目归属（内存态），保持原语义：项目归属随缓存复用
+        const projectRef = raw ? extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle) : null;
+        const entrySource = raw ? (encodeVaultPath(raw.cwd).startsWith(vaultDirName) ? 'Obsidian' : '命令行') : '命令行';
+        meta = raw ? {
+          aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
+          firstPrompt: raw.firstPrompt,
+          startTime: raw.startTime,
+          lastTime: raw.lastTime,
+          userTurns: raw.userTurns,
+          toolCalls: raw.toolCalls,
+          cwd: raw.cwd,
+          projectPath: projectRef!.projectPath,
+          projectSource: projectRef!.source,
+          projectEvidence: projectRef!.evidence,
+          entrySource,
+          skills: raw.skills,
+        } : null;
+        fileCache.set(filePath, { size: st.size, mtimeMs: st.mtimeMs, meta });
+      }
+      if (!meta) return null;
+
+      const projectRef = {
+        projectPath: meta.projectPath,
+        source: meta.projectSource as ProjectRef['source'],
+        evidence: meta.projectEvidence,
+      };
       const card: SessionCard = {
         sessionId,
-        aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
-        firstPrompt: raw.firstPrompt,
-        startTime: raw.startTime,
-        lastTime: raw.lastTime,
-        userTurns: raw.userTurns,
-        toolCalls: raw.toolCalls,
-        cwd: raw.cwd,
+        aiTitle: meta.aiTitle,
+        firstPrompt: meta.firstPrompt,
+        startTime: meta.startTime,
+        lastTime: meta.lastTime,
+        userTurns: meta.userTurns,
+        toolCalls: meta.toolCalls,
+        cwd: meta.cwd,
         projectRef,
         filePath,
-        entrySource,
-        skills: raw.skills,
+        entrySource: meta.entrySource,
+        skills: meta.skills,
       };
       return card;
     }),
@@ -496,24 +560,53 @@ export async function scanAllSessions(
     const jsonlFiles = files.filter((f) => f.endsWith('.jsonl'));
     for (const f of jsonlFiles) {
       const filePath = path.join(dirPath, f);
-      const raw = await parseSessionFile(filePath);
-      if (!raw) { failed++; continue; }
-      const projectRef = extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle);
-      // 入口来源：目录名匹配当前 vault 编码 → Obsidian，否则 → 命令行
-      const entrySource = d === currentEncoded ? 'Obsidian' : '命令行';
+
+      // 增量：文件未变化 → 直接用缓存，不重解析
+      let st: fs.Stats;
+      try { st = await fs.promises.stat(filePath); } catch { failed++; continue; }
+      let meta: JsonlMeta | null;
+      if (cacheValid(filePath, st.size, st.mtimeMs)) {
+        meta = fileCache.get(filePath)!.meta;
+      } else {
+        const raw = await parseSessionFile(filePath);
+        const projectRef = raw ? extractProjectRef(raw.textChunks, knownProjectPaths, raw.cwd, raw.aiTitle) : null;
+        const entrySource = d === currentEncoded ? 'Obsidian' : '命令行';
+        meta = raw ? {
+          aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
+          firstPrompt: raw.firstPrompt,
+          startTime: raw.startTime,
+          lastTime: raw.lastTime,
+          userTurns: raw.userTurns,
+          toolCalls: raw.toolCalls,
+          cwd: raw.cwd,
+          projectPath: projectRef!.projectPath,
+          projectSource: projectRef!.source,
+          projectEvidence: projectRef!.evidence,
+          entrySource,
+          skills: raw.skills,
+        } : null;
+        fileCache.set(filePath, { size: st.size, mtimeMs: st.mtimeMs, meta });
+      }
+      if (!meta) { failed++; continue; }
+
+      const projectRef = {
+        projectPath: meta.projectPath,
+        source: meta.projectSource as ProjectRef['source'],
+        evidence: meta.projectEvidence,
+      };
       sessions.push({
         sessionId: f.replace(/\.jsonl$/, ''),
-        aiTitle: raw.aiTitle || raw.firstPrompt.slice(0, 40) || '(无标题)',
-        firstPrompt: raw.firstPrompt,
-        startTime: raw.startTime,
-        lastTime: raw.lastTime,
-        userTurns: raw.userTurns,
-        toolCalls: raw.toolCalls,
-        cwd: raw.cwd,
+        aiTitle: meta.aiTitle,
+        firstPrompt: meta.firstPrompt,
+        startTime: meta.startTime,
+        lastTime: meta.lastTime,
+        userTurns: meta.userTurns,
+        toolCalls: meta.toolCalls,
+        cwd: meta.cwd,
         projectRef,
         filePath,
-        entrySource,
-        skills: raw.skills,
+        entrySource: meta.entrySource,
+        skills: meta.skills,
       });
     }
   }
@@ -572,4 +665,43 @@ export async function getArchivedSessionIds(archiveDir: string): Promise<Set<str
     // 目录不存在时静默处理
   }
   return ids;
+}
+
+// ===== 删除会话 =====
+
+/**
+ * 删除会话源 .jsonl 文件（不可恢复），同时清理增量扫描缓存。
+ * 仅删源文件，不触碰 _archived 中的存档副本。
+ */
+export async function deleteSessionFile(filePath: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await fs.promises.unlink(filePath);
+    fileCache.delete(filePath);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+/**
+ * 取消存档：删除存档目录中该会话的全部存档副本（源文件不受影响），会话恢复到「未存档」状态。
+ * 存档文件名格式：<sessionId>_<YYYYMMDD>.jsonl，同名会话可能被多次存成多个副本，一并删除。
+ */
+export async function unarchiveSession(sessionId: string, archiveDir: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(archiveDir);
+    } catch {
+      return { success: false, error: '存档目录不存在' };
+    }
+    const targets = entries.filter((f) => f.endsWith('.jsonl') && f.startsWith(sessionId + '_'));
+    if (targets.length === 0) return { success: false, error: '未找到该会话的存档副本' };
+    for (const t of targets) {
+      await fs.promises.unlink(path.join(archiveDir, t));
+    }
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) };
+  }
 }

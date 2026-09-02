@@ -12,9 +12,9 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
 import { spawn } from 'child_process';
-import { scanSessions, scanAllSessions, parseSessionTurns, archiveSessionFile, getArchivedSessionIds, type SessionCard, type SessionDetail, type TurnBlock } from '../data/sessionScanner';
+import { scanSessions, scanAllSessions, parseSessionTurns, archiveSessionFile, unarchiveSession, deleteSessionFile, getArchivedSessionIds, type SessionCard, type SessionDetail, type TurnBlock } from '../data/sessionScanner';
 import { scanProjects, type ProjectInfo } from '../data/projectScanner';
-import { getSessionArchiveDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride, getConfig } from '../data/settings';
+import { getSessionArchiveDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride, removeSessionOverrides, getConfig } from '../data/settings';
 
 // ===== 类型 =====
 type SidebarTab = 'projects' | 'general';
@@ -275,7 +275,7 @@ function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: Session
 }
 
 // ===== 会话卡片 =====
-function SessionCardView({ card, archived, titleOverride, effectiveProjectPath, onOpen, onOpenInClaude, onArchive, onTitleChange, onMoveClick }: { card: SessionCard; archived: boolean; titleOverride: string | null; effectiveProjectPath: string | null; onOpen: (c: SessionCard) => void; onOpenInClaude: (c: SessionCard) => void; onArchive: (c: SessionCard) => void; onTitleChange: (sessionId: string, title: string) => void; onMoveClick: (c: SessionCard) => void }) {
+function SessionCardView({ card, archived, titleOverride, effectiveProjectPath, onOpen, onOpenInClaude, onArchive, onUnarchive, onDelete, onTitleChange, onMoveClick }: { card: SessionCard; archived: boolean; titleOverride: string | null; effectiveProjectPath: string | null; onOpen: (c: SessionCard) => void; onOpenInClaude: (c: SessionCard) => void; onArchive: (c: SessionCard) => void; onUnarchive: (c: SessionCard) => void; onDelete: (c: SessionCard) => void; onTitleChange: (sessionId: string, title: string) => void; onMoveClick: (c: SessionCard) => void }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -352,10 +352,12 @@ function SessionCardView({ card, archived, titleOverride, effectiveProjectPath, 
         )}
         <span className="mswb-session-head-actions">
           <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onMoveClick(card); }} title="移动项目">📂</button>
-          {!archived && (
+          {archived ? (
+            <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onUnarchive(card); }} title="取消存档">↩️</button>
+          ) : (
             <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onArchive(card); }} title="存档">📦</button>
           )}
-          {archived && <span className="mswb-session-archived-badge">📦</span>}
+          <button className="mswb-session-icon-btn mswb-session-icon-danger" onClick={(e) => { e.stopPropagation(); onDelete(card); }} title="删除会话">🗑</button>
         </span>
       </div>
       <div className="mswb-session-meta-row" onClick={() => onOpen(card)}>
@@ -402,6 +404,7 @@ export function SessionsPanel({ app }: { app: App }) {
   const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>({});
   const [sessionProjectOverrides, setSessionProjectOverrides] = useState<Record<string, string | null>>({});
   const [moveTarget, setMoveTarget] = useState<SessionCard | null>(null);
+  const [bulkArchiving, setBulkArchiving] = useState(false);
 
   // 扫描会话
   const doScan = useCallback(async () => {
@@ -506,6 +509,60 @@ export function SessionsPanel({ app }: { app: App }) {
     await setSessionTitleOverride(sessionId, title);
     setTitleOverrides((prev) => ({ ...prev, [sessionId]: title }));
   }, []);
+
+  // 取消存档
+  const handleUnarchive = useCallback(async (card: SessionCard) => {
+    try {
+      const archiveDir = getSessionArchiveDir();
+      const result = await unarchiveSession(card.sessionId, archiveDir);
+      if (result.success) {
+        new Notice(`✅ 已取消存档：${card.aiTitle}`);
+        setArchivedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(card.sessionId);
+          return next;
+        });
+      } else {
+        new Notice(`❌ 取消存档失败：${result.error || '未知错误'}`);
+      }
+    } catch (e: any) {
+      new Notice(`❌ 取消存档失败：${e?.message || e}`);
+    }
+  }, []);
+
+  // 删除会话（卡片 + 存档 + 覆盖记录一并删除）
+  const handleDelete = useCallback(async (card: SessionCard) => {
+    if (!confirm(`确定要删除会话「${card.aiTitle}」吗？\n将删除源文件及其存档副本，此操作不可恢复。`)) return;
+    try {
+      const errs: string[] = [];
+      // 删除源文件
+      const src = await deleteSessionFile(card.filePath);
+      if (!src.success) errs.push(`源文件：${src.error || '失败'}`);
+      // 删除存档副本（若存在）
+      const archiveDir = getSessionArchiveDir();
+      const unarchived = await unarchiveSession(card.sessionId, archiveDir).catch(() => ({ success: false, error: '存档' }));
+      if (errs.length === 0 && !unarchived.success && unarchived.error !== '不存在') {
+        // 存档目录不存在 / 未找到副本属于正常情况，不视为错误；其它错误记录
+        errs.push(`存档：${unarchived.error}`);
+      }
+      // 清理 data.json 覆盖记录
+      await removeSessionOverrides(card.sessionId);
+      // 更新本地 state
+      setSessions((prev) => prev.filter((s) => s.sessionId !== card.sessionId));
+      setArchivedIds((prev) => { const n = new Set(prev); n.delete(card.sessionId); return n; });
+      setTitleOverrides((prev) => { const n = { ...prev }; delete n[card.sessionId]; return n; });
+      setSessionProjectOverrides((prev) => { const n = { ...prev }; delete n[card.sessionId]; return n; });
+      if (detail && detail.sessionId === card.sessionId) setDetail(null);
+
+      if (errs.length === 0) {
+        new Notice(`🗑 已删除会话：${card.aiTitle}`);
+      } else {
+        new Notice(`⚠️ 会话已删除，但有部分清理失败：${errs.join('；')}`);
+      }
+    } catch (e: any) {
+      new Notice(`❌ 删除失败：${e?.message || e}`);
+    }
+  }, [detail]);
 
   // 左侧菜单项渲染
   const projectCount = useCallback((path: string | null) => {
@@ -616,7 +673,36 @@ export function SessionsPanel({ app }: { app: App }) {
       list = list.filter((s) => (titleOverrides[s.sessionId] || s.aiTitle).toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q));
     }
     return list;
-  }, [sessions, activeSidebarTab, selectedProject, selectedFilter, search, archivedIds, titleOverrides]);
+  }, [sessions, activeSidebarTab, selectedProject, selectedFilter, search, archivedIds, titleOverrides, sessionProjectOverrides]);
+
+  // 一键存档当前筛选结果
+  // ⚠️ 必须在 filteredSessions 声明之后定义：useCallback 依赖数组在定义时求值，
+  // 引用后声明的 const 会触发 TDZ（Cannot access 'X' before initialization），导致整个面板白屏
+  const handleBulkArchive = useCallback(async () => {
+    if (bulkArchiving) return;
+    const targets = filteredSessions.filter((s) => !archivedIds.has(s.sessionId));
+    if (targets.length === 0) {
+      new Notice('当前列表没有可存档的会话');
+      return;
+    }
+    if (!confirm(`确定要存档当前列表的 ${targets.length} 个会话吗？\n存档为复制副本，不会删除源文件。`)) return;
+    const archiveDir = getSessionArchiveDir();
+    setBulkArchiving(true);
+    try {
+      let ok = 0;
+      let fail = 0;
+      for (const s of targets) {
+        const r = await archiveSessionFile(s.filePath, archiveDir);
+        if (r.success) { ok++; setArchivedIds((prev) => new Set(prev).add(s.sessionId)); }
+        else { fail++; console.warn('存档失败', s.sessionId, r.archivedPath); }
+      }
+      new Notice(`✅ 已存档 ${ok} 个（失败 ${fail}）`);
+    } catch (e: any) {
+      new Notice(`❌ 存档出错：${e?.message || e}`);
+    } finally {
+      setBulkArchiving(false);
+    }
+  }, [bulkArchiving, filteredSessions, archivedIds]);
 
   // 当前标题
   const currentTitle = useMemo(() => {
@@ -671,7 +757,7 @@ export function SessionsPanel({ app }: { app: App }) {
             const ov = sessionProjectOverrides?.[s.sessionId];
             const ep = ov !== undefined ? ov : s.projectRef.projectPath;
             return (
-              <SessionCardView key={s.sessionId} card={s} archived={archivedIds.has(s.sessionId)} titleOverride={titleOverrides[s.sessionId] ?? null} effectiveProjectPath={ep} onOpen={openDetail} onOpenInClaude={openInClaude} onArchive={handleArchive} onTitleChange={handleTitleChange} onMoveClick={openMoveDialog} />
+              <SessionCardView key={s.sessionId} card={s} archived={archivedIds.has(s.sessionId)} titleOverride={titleOverrides[s.sessionId] ?? null} effectiveProjectPath={ep} onOpen={openDetail} onOpenInClaude={openInClaude} onArchive={handleArchive} onUnarchive={handleUnarchive} onDelete={handleDelete} onTitleChange={handleTitleChange} onMoveClick={openMoveDialog} />
             );
           })}
       </div>
@@ -722,9 +808,14 @@ export function SessionsPanel({ app }: { app: App }) {
           {/* 顶部栏 */}
           <div className="mswb-sessions-header">
             <span className="mswb-sessions-title">💬 会话</span>
-            <button className="mswb-sessions-refresh-btn" onClick={doScan} disabled={loading}>
-              {loading ? '扫描中…' : '🔄 刷新'}
-            </button>
+            <div className="mswb-sessions-header-actions">
+              <button className="mswb-sessions-refresh-btn" onClick={handleBulkArchive} disabled={bulkArchiving} title="对当前筛选列表的会话创建存档副本（不删除源文件）">
+                {bulkArchiving ? '存档中…' : `📦 存档当前${filteredSessions.length > 0 ? ` (${filteredSessions.length})` : ''}`}
+              </button>
+              <button className="mswb-sessions-refresh-btn" onClick={doScan} disabled={loading}>
+                {loading ? '扫描中…' : '🔄 刷新'}
+              </button>
+            </div>
           </div>
 
           {/* 主体 */}

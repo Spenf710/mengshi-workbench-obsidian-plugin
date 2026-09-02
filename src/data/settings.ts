@@ -360,3 +360,19 @@ export async function setSessionProjectOverride(sessionId: string, projectPath: 
   }
   await persist();
 }
+
+// ===== 会话覆盖清理（删除会话时调用） =====
+
+/** 删除会话时清理其标题/归属覆盖，避免 data.json 残留孤儿记录 */
+export async function removeSessionOverrides(sessionId: string): Promise<void> {
+  let changed = false;
+  if (dataCache.sessionTitleOverrides && sessionId in dataCache.sessionTitleOverrides) {
+    delete dataCache.sessionTitleOverrides[sessionId];
+    changed = true;
+  }
+  if (dataCache.sessionProjectOverrides && sessionId in dataCache.sessionProjectOverrides) {
+    delete dataCache.sessionProjectOverrides[sessionId];
+    changed = true;
+  }
+  if (changed) await persist();
+}
