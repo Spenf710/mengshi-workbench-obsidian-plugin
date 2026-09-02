@@ -705,3 +705,165 @@ export async function unarchiveSession(sessionId: string, archiveDir: string): P
     return { success: false, error: e?.message || String(e) };
   }
 }
+
+// ===== 存档扫描（源文件被清理后，仅存档会话的展示 + 查重） =====
+
+/** 存档会话的完整摘要：去重后每个 sessionId 一份，取最新存档副本 */
+export interface ArchivedSessionSummary {
+  sessionId: string;
+  /** 最新存档副本文件名 <sessionId>_<YYYYMMDD>.jsonl */
+  latestName: string;
+  /** 最新存档副本绝对路径 */
+  latestPath: string;
+  /** 存档文件大小（字节） */
+  size: number;
+  /** 最后活动时间 ISO（从 jsonl 内解析，无则用 mtime） */
+  lastTime: string;
+  aiTitle: string;
+  firstPrompt: string;
+  /** 项目归属（从存档副本内重新做三线索匹配，继承原有分组） */
+  projectRef: ProjectRef;
+}
+
+/** 存档元信息轻量解析（提取标题/时间/首问/归属文本片段） */
+async function parseArchivedMetadata(filePath: string): Promise<{ aiTitle: string; firstPrompt: string; lastTime: string; cwd: string; textChunks: string[] } | null> {
+  return new Promise((resolve) => {
+    let aiTitle = '';
+    let firstPrompt = '';
+    let lastTime = '';
+    let cwd = '';
+    let hasAny = false;
+    const textChunks: string[] = [];
+
+    const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+    let buf = '';
+    stream.on('data', (chunk: Buffer | string) => {
+      buf += chunk;
+      const parts = buf.split('\n');
+      buf = parts.pop() ?? '';
+      for (const line of parts) {
+        if (!line.trim()) continue;
+        let obj: any;
+        try { obj = JSON.parse(line); } catch { continue; }
+        hasAny = true;
+        const t = obj.type;
+        if (obj.timestamp && !lastTime) lastTime = obj.timestamp;
+        else if (obj.timestamp) lastTime = obj.timestamp;
+        if (obj.cwd && !cwd) cwd = obj.cwd;
+        if (t === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle as string;
+        if (t === 'user') {
+          const content = obj.message?.content;
+          const isToolTurn = isToolResultTurn(content) || isSystemInjected(obj);
+          if (!isToolTurn) {
+            const text = extractText(content);
+            if (text) {
+              if (!firstPrompt) firstPrompt = text.slice(0, 200);
+              if (textChunks.length < 3) textChunks.push(text);
+            }
+          }
+        }
+      }
+    });
+    stream.on('end', () => {
+      if (buf.trim()) {
+        try {
+          const obj = JSON.parse(buf);
+          hasAny = true;
+          if (obj.type === 'ai-title' && obj.aiTitle) aiTitle = obj.aiTitle;
+        } catch { /* ignore */ }
+      }
+      resolve(hasAny ? { aiTitle, firstPrompt, lastTime, cwd, textChunks } : null);
+    });
+    stream.on('error', () => resolve(null));
+  });
+}
+
+// 存档元信息增量缓存（同源文件扫描策略：文件大小+mtime 未变则跳过解析）
+const archivedMetaCache = new Map<string, { size: number; mtimeMs: number; meta: { aiTitle: string; firstPrompt: string; lastTime: string; cwd: string; textChunks: string[] } | null }>();
+
+/**
+ * 扫描存档目录，按 sessionId 去重（查重），每个会话取最新存档副本。
+ * 归档结构：<sessionId>_<YYYYMMDD>.jsonl，同名可多次存档（多份副本），仅保留最新一份展示。
+ * 项目归属从存档副本内重新三线索匹配（继承源文件时期的自动分组）。
+ * @param archiveDir 存档目录
+ * @param knownProjectPaths 已知项目目录相对路径列表（来自 projectScanner）
+ * @returns 存档会话摘要列表，按最后活动时间降序
+ */
+export async function scanArchivedSessions(archiveDir: string, knownProjectPaths: string[] = []): Promise<ArchivedSessionSummary[]> {
+  let entries: string[];
+  try {
+    entries = await fs.promises.readdir(archiveDir);
+  } catch {
+    return [];
+  }
+
+  // 第一遍：文件名解析，按 sessionId 归并，取日期最新的一份
+  interface Pending { name: string; path: string; dateStr: string; size: number; mtimeMs: number; }
+  const byId = new Map<string, Pending>();
+  for (const f of entries) {
+    if (!f.endsWith('.jsonl')) continue;
+    const m = f.match(/^(.+?)_(\d{8})\.jsonl$/);
+    if (!m) continue;
+    const sessionId = m[1];
+    const dateStr = m[2];
+    const fullPath = path.join(archiveDir, f);
+    let st: fs.Stats;
+    try { st = await fs.promises.stat(fullPath); } catch { continue; }
+    const cur = byId.get(sessionId);
+    if (!cur || dateStr > cur.dateStr || (dateStr === cur.dateStr && st.mtimeMs > cur.mtimeMs)) {
+      byId.set(sessionId, { name: f, path: fullPath, dateStr, size: st.size, mtimeMs: st.mtimeMs });
+    }
+  }
+
+  // 第二遍：对每个最新副本提取元信息（增量缓存）+ 项目归属
+  const summaries: ArchivedSessionSummary[] = [];
+  for (const [sessionId, p] of byId) {
+    let meta: { aiTitle: string; firstPrompt: string; lastTime: string; cwd: string; textChunks: string[] } | null;
+    const cached = archivedMetaCache.get(p.path);
+    if (cached && cached.size === p.size && cached.mtimeMs === p.mtimeMs) {
+      meta = cached.meta;
+    } else {
+      meta = await parseArchivedMetadata(p.path);
+      archivedMetaCache.set(p.path, { size: p.size, mtimeMs: p.mtimeMs, meta });
+    }
+    const projectRef = extractProjectRef(meta?.textChunks ?? [], knownProjectPaths, meta?.cwd ?? '', meta?.aiTitle);
+    summaries.push({
+      sessionId,
+      latestName: p.name,
+      latestPath: p.path,
+      size: p.size,
+      lastTime: meta?.lastTime || new Date(p.mtimeMs).toISOString(),
+      aiTitle: meta?.aiTitle || '',
+      firstPrompt: meta?.firstPrompt || '',
+      projectRef,
+    });
+  }
+
+  summaries.sort((a, b) => (b.lastTime || '').localeCompare(a.lastTime || ''));
+  return summaries;
+}
+
+/**
+ * 恢复源文件：把存档副本复制回源目录（~/.claude/projects/<编码vault>/<sessionId>.jsonl），
+ * 使 `claude --resume <sessionId>` 可继续续接该会话。源文件已存在则直接返回。
+ * 恢复后副本仍保留在存档目录，作为双保险。
+ * @returns 恢复后的目标路径（存在则复用已有源文件）
+ */
+export async function restoreSessionSource(
+  sessionId: string,
+  archiveDir: string,
+  vaultDir: string,
+): Promise<{ success: boolean; targetPath?: string; error?: string }> {
+  try {
+    const summaries = await scanArchivedSessions(archiveDir);
+    const target = summaries.find((s) => s.sessionId === sessionId);
+    if (!target) return { success: false, error: '未找到该会话的存档副本' };
+    const targetPath = path.join(vaultDir, `${sessionId}.jsonl`);
+    if (fs.existsSync(targetPath)) return { success: true, targetPath };
+    fs.copyFileSync(target.latestPath, targetPath);
+    fileCache.delete(targetPath); // 清掉可能存在的旧条目，让下次扫描重解析
+    return { success: true, targetPath };
+  } catch (e: any) {
+    return { success: false, error: e?.message || String(e) };
+  }
+}
