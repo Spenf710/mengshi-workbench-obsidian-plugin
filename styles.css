@@ -1213,6 +1213,22 @@
   color: var(--text-normal);
   outline: none;
   resize: vertical;
+  box-sizing: border-box;
+}
+
+/* 编辑态隐藏（此前用 setCssProps 控制 display，现由该类接管） */
+.mswb-modal-md-edit-hidden {
+  display: none;
+}
+
+.mswb-modal-md-hidden {
+  display: none;
+}
+
+/* 已完成待办行：删除线 + 半透明（此前用 setCssProps 动态切换，现由类切换） */
+.mswb-todo-check-row.mswb-todo-check-done .mswb-todo-check-text {
+  text-decoration: line-through;
+  opacity: 0.5;
 }
 
 .mswb-modal-warn {

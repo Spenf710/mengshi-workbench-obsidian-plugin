@@ -172,7 +172,6 @@ export class QuickTodoModal extends Modal {
 
   private renderTargetDropdown(el: HTMLElement): void {
     const wrap = el.createDiv({ cls: 'mswb-target-row mswb-modal-field' });
-    wrap.setCssProps({ flex: '1' });
     this.targetWrapper = wrap;
     this.targetParent = el;
     wrap.createEl('label', { text: '添加到', cls: 'mswb-modal-label' });

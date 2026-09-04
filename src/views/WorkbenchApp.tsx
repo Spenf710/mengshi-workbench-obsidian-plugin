@@ -308,13 +308,12 @@ function CalStatusBadge({
     if (!el) return;
 
     // 临时解除约束，测量文字真实宽度
+    // 注：用 style 属性/removeProperty 完成动态测量（静态对象传入 setCssProps 会被社区 obsidianmd 规则标记）
     const prevMax = el.style.maxWidth;
-    el.setCssProps({ 'max-width': 'none' });
+    el.style.removeProperty('max-width');
     const textWidth = el.scrollWidth;
     if (prevMax) {
-      el.setCssProps({ 'max-width': prevMax });
-    } else {
-      el.style.removeProperty('max-width');
+      el.style.maxWidth = prevMax;
     }
 
     // 获取所在行可用宽度

@@ -14,7 +14,7 @@ export const STATUS_OPTIONS = {
 };
 
 export function getDatePath(dateStr: string): string {
-  const [y, m] = dateStr.split('-');
+  const [, m] = dateStr.split('-');
   return `${getConfig().workLogPath}/${parseInt(m)}月/${dateStr}.md`;
 }
 
@@ -114,10 +114,8 @@ export class QuickDiaryModal extends Modal {
       doneSection.createEl('div', { text: '点击切换编辑 / 预览', cls: 'setting-item-description' });
 
       const doneView = doneSection.createDiv({ cls: 'mswb-modal-md' });
-      const doneEdit = doneSection.createDiv({ cls: 'mswb-modal-md-edit' });
-      doneEdit.setCssProps({ display: 'none' });
+      const doneEdit = doneSection.createDiv({ cls: 'mswb-modal-md-edit mswb-modal-md-edit-hidden' });
       const ta = doneEdit.createEl('textarea');
-      ta.setCssProps({ width: '100%', 'min-height': '80px' });
       let editing = false;
 
       const renderDone = () => {
@@ -125,8 +123,6 @@ export class QuickDiaryModal extends Modal {
         if (!this.done.trim()) {
           doneView.createEl('span', { text: '（空）', cls: 'mswb-modal-warn' });
         } else {
-          // 计算可用宽度（留出复选框空间）
-          const containerWidth = doneView.clientWidth - 36;
           const list = doneView.createEl('ul');
           const allLines = this.done.split('\n');
           for (let i = 0; i < allLines.length; i++) {
@@ -138,28 +134,26 @@ export class QuickDiaryModal extends Modal {
             if (!text) continue;
 
             const li = list.createEl('li', { cls: 'mswb-todo-check-row', attr: { 'data-index': String(i) } });
+            li.classList.toggle('mswb-todo-check-done', isChecked);
             const cb = li.createEl('input', { type: 'checkbox' });
             cb.checked = isChecked;
-            if (isChecked) { li.setCssProps({ 'text-decoration': 'line-through', opacity: '0.5' }); }
             const textDiv = li.createEl('div', { cls: 'mswb-todo-check-text' });
-            textDiv.setCssProps({ 'max-width': `${containerWidth}px` });
             textDiv.textContent = text;
 
             cb.addEventListener('change', async () => {
-              const checked = cb.checked;
               const index = parseInt(li.getAttribute('data-index') ?? '-1');
               if (index < 0) return;
               const arr = this.done.split('\n');
-              arr[index] = arr[index].replace(/\[.?\]/, checked ? '[x]' : '[ ]');
+              arr[index] = arr[index].replace(/\[.?\]/, cb.checked ? '[x]' : '[ ]');
               this.done = arr.join('\n');
-              li.setCssProps({ 'text-decoration': checked ? 'line-through' : 'none', opacity: checked ? '0.5' : '1' });
+              li.classList.toggle('mswb-todo-check-done', cb.checked);
               await this.saveDone();
             });
           }
         }
-        doneView.setCssProps({ display: editing ? 'none' : 'block' });
+        doneView.classList.toggle('mswb-modal-md-hidden', editing);
+        doneEdit.classList.toggle('mswb-modal-md-edit-hidden', !editing);
         ta.value = this.done;
-        doneEdit.setCssProps({ display: editing ? 'block' : 'none' });
       };
 
       doneView.addEventListener('click', (e) => {

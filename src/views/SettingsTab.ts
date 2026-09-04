@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import {
   getConfig,
@@ -10,6 +10,7 @@ import {
   getFeishuConfig,
   setFeishuConfig,
 } from '../data/settings';
+import { installHarvestSkill } from '../data/harvestSkill';
 
 export class WorkbenchSettingsTab extends PluginSettingTab {
   private config: PluginConfig;
@@ -200,6 +201,52 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           .onChange((v) => { sessionText.codemCliPath = v; });
       });
 
+    // ===== 收割技能 =====
+    new Setting(containerEl).setHeading().setName('🌾 收割技能');
+
+    new Setting(containerEl)
+      .setName('收割技能名')
+      .setDesc('会话「已收割」按此名单匹配。默认 session-harvest；用自己的收割 SKILL 名替换，多个用逗号分隔。留空 = 默认')
+      .addText((t) => {
+        t.setValue((sessionCfg.harvestSkillNames || ['session-harvest']).join(','))
+          .setPlaceholder('session-harvest')
+          .onChange((v) => { sessionText.harvestSkillNames = v.split(',').map((s) => s.trim()).filter(Boolean); });
+      });
+
+    new Setting(containerEl)
+      .setName('一键注册收割 SKILL')
+      .setDesc('把内置的通用「会话知识收割」模板写入本机技能目录（Claude Code ~/.claude/skills、CodeM ~/.agents/skills），无需手动拷贝。已有文件会自动备份为 .bak。登录态不影响，仅写本地文件')
+      .addButton((b) => b
+        .setButtonText('🤖 Claude Code')
+        .setCta()
+        .onClick(async () => {
+          const res = installHarvestSkill('claude');
+          const r = res[0];
+          new Notice(r.ok
+            ? (r.existed ? `✅ 已注册（原文件已备份为 .bak）: ${r.path}` : `✅ 已注册: ${r.path}`)
+            : `❌ 注册失败: ${r.error}`);
+        }))
+      .addButton((b) => b
+        .setButtonText('🏷 CodeM')
+        .setCta()
+        .onClick(async () => {
+          const res = installHarvestSkill('codem');
+          const r = res[0];
+          new Notice(r.ok
+            ? (r.existed ? `✅ 已注册（原文件已备份为 .bak）: ${r.path}` : `✅ 已注册: ${r.path}`)
+            : `❌ 注册失败: ${r.error}`);
+        }))
+      .addButton((b) => b
+        .setButtonText('🌐 都装')
+        .onClick(async () => {
+          const res = installHarvestSkill('both');
+          const okN = res.filter((r) => r.ok).length;
+          const err = res.filter((r) => !r.ok);
+          new Notice(err.length === 0
+            ? `✅ 已注册 ${okN} 处（已存在则备份 .bak）`
+            : `⚠️ 注册 ${okN} 处，失败 ${err.length} 处：${err[0].error}`);
+        }));
+
     // ===== 飞书 =====
     const feishuCfg = { ...getFeishuConfig() };
     const feishuText: any = {};
@@ -250,6 +297,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
             archiveDir: sessionText.archiveDir ?? '',
             codemRootDir: sessionText.codemRootDir ?? '',
             codemCliPath: sessionText.codemCliPath ?? '',
+            harvestSkillNames: sessionText.harvestSkillNames || ['session-harvest'],
           });
           await setFeishuConfig({
             larkCliPath: feishuText.larkCliPath ?? '',
@@ -263,16 +311,18 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('恢复默认')
       .setDesc('将所有配置恢复为默认值')
-      .addButton((b) => b
-        .setButtonText('🔄 恢复默认')
-        .setDestructive()
-        .onClick(async () => {
+      .addButton((b) => {
+        b.setButtonText('🔄 恢复默认');
+        // 1.7.2 无 setDestructive（1.13+ 才有）——用基础类模 red 表达危险操作，保持 minAppVersion 兼容
+        if ('setClass' in b && typeof b.setClass === 'function') b.setClass('mod-warning');
+        b.onClick(async () => {
           await resetConfig();
-          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '', codemRootDir: '', codemCliPath: '' });
+          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '', codemRootDir: '', codemCliPath: '', harvestSkillNames: ['session-harvest'] });
           await setFeishuConfig({ larkCliPath: '', scanFolderLimit: 100, scanConcurrency: 5 });
           this.config = { ...getConfig() };
           this.display();
-        }));
+        });
+      });
   }
 
   private renderRoots(container: HTMLElement): void {

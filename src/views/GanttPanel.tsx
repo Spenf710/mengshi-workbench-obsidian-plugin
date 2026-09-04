@@ -407,12 +407,10 @@ export function GanttPanel({ app }: { app: App }) {
     const el = barColRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const totalMs = max.getTime() - min.getTime();
 
     const onMove = (e: MouseEvent) => {
       const px = Math.max(rect.left, Math.min(rect.right, e.clientX));
-      const pct = ((dateMs - min.getTime()) / totalMs) * 100;
-      const date = new Date(dateMs);
+      const date = pxToDate(px);
 
       setTasks((prev) =>
         prev.map((t) => {
