@@ -2795,6 +2795,13 @@
   color: var(--text-normal);
 }
 
+/* 顶部栏左侧：标题 + Agent 切换下拉（标题右侧） */
+.mswb-sessions-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .mswb-sessions-refresh-btn {
   padding: 4px 12px;
   border: 1px solid var(--background-modifier-border);
@@ -2814,6 +2821,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 顶部 Agent 切换下拉框 */
+.mswb-agent-select {
+  padding: 4px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 150px;
 }
 
 /* 主体 */
@@ -2936,6 +2955,40 @@
 
 .mswb-sessions-menu-all {
   font-weight: 500;
+}
+
+/* 通用 Tab 日期/轮次筛选：横向小按钮组（一行默认 3 个） */
+.mswb-filter-group {
+  margin-bottom: 2px;
+}
+.mswb-filter-group .mswb-sessions-menu-group-title {
+  padding: 8px 14px 4px;
+}
+.mswb-filter-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 0 14px;
+}
+.mswb-filter-chip {
+  padding: 4px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  user-select: none;
+}
+.mswb-filter-chip:hover {
+  background: var(--background-modifier-hover);
+}
+.mswb-filter-chip.active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
 }
 
 /* 搜索框 */
@@ -3106,6 +3159,13 @@
 .mswb-session-badge.entry-obsidian { color: #2e8b57; }
 .mswb-session-badge.entry-cmd { color: #8b4513; }
 
+/* 收割状态 badge：harvested=会话中出现过收割调用 */
+.mswb-session-badge.mswb-session-badge-harvest {
+  color: #2e8b57;
+  background: rgba(46, 139, 87, 0.12);
+  font-weight: 600;
+}
+
 /* 标题编辑输入框 */
 .mswb-session-title-input {
   flex: 1;
@@ -3238,6 +3298,24 @@
 }
 .mswb-session-move-item:hover {
   background: var(--background-modifier-hover);
+}
+/* 移动弹窗项目分组标题 */
+.mswb-session-move-group {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.mswb-session-move-group:first-of-type {
+  border-top: none;
+}
+.mswb-session-move-group-title {
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.mswb-session-move-item.mswb-session-move-group-item {
+  padding-left: 18px;
 }
 
 .mswb-session-proj {
@@ -3482,7 +3560,30 @@
   color: var(--text-faint);
 }
 
-/* 会话详情 Markdown 渲染增强 */
+/* CodeM 飞书 IM 入参：结构化键值表格 */
+.mswb-turn-structured .mswb-turn-block-head {
+  color: #2e8b87;
+}
+.mswb-structured-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.mswb-structured-table td {
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mswb-structured-table .mswb-structured-key {
+  width: 1%;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #2e8b87;
+  background: var(--background-secondary);
+}
+
 .mswb-turn-text h1,
 .mswb-turn-text h2,
 .mswb-turn-text h3,

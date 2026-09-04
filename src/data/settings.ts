@@ -47,12 +47,18 @@ export interface SessionConfig {
   claudeCliPath: string;
   /** 会话存档目录（绝对路径），空 = 默认 ~/.claude/projects/_archived */
   archiveDir: string;
+  /** CodeM 会话根目录（默认 ~/.codem/sessions），存放各项目目录的 .jsonl */
+  codemRootDir: string;
+  /** codem CLI 路径（空 = 自动检测，「在 CodeM 中打开」用） */
+  codemCliPath: string;
 }
 
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
   sessionRootDir: '',
   claudeCliPath: '',
   archiveDir: '',
+  codemRootDir: '',
+  codemCliPath: '',
 };
 
 export interface ProjectMetaOverride {
@@ -301,6 +307,7 @@ export async function setFeishuConfig(config: Partial<FeishuConfig>): Promise<vo
 // ===== 会话配置管理 =====
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
 
 /** 解析会话根目录：用户配置 > 默认 ~/.claude/projects */
 export function getSessionRootDir(): string {
@@ -314,6 +321,22 @@ export function getSessionArchiveDir(): string {
   const cfg = getSessionConfig();
   if (cfg.archiveDir) return cfg.archiveDir;
   return path.join(getSessionRootDir(), '_archived');
+}
+
+/** 解析 CodeM 会话根目录：用户配置 > 默认 ~/.codem/sessions */
+export function getCodemRootDir(): string {
+  const cfg = getSessionConfig();
+  if (cfg.codemRootDir) return cfg.codemRootDir;
+  return path.join(os.homedir(), '.codem', 'sessions');
+}
+
+/** 解析 codem CLI 路径：用户配置 > 自动检测（~/.codem/bin/codem.cmd） > 'codem' */
+export function getCodemCliPath(): string {
+  const cfg = getSessionConfig();
+  if (cfg.codemCliPath) return cfg.codemCliPath;
+  // 实测：codem 未进入 PATH，安装器固定生成 ~/.codem/bin/codem.cmd（Node 启动器）
+  const candidate = path.join(os.homedir(), '.codem', 'bin', 'codem.cmd');
+  return fs.existsSync(candidate) ? candidate : 'codem';
 }
 
 export function getSessionConfig(): SessionConfig {

@@ -13,13 +13,38 @@ import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
 import { spawn } from 'child_process';
 import * as path from 'path';
-import { scanSessions, scanAllSessions, parseSessionTurns, archiveSessionFile, unarchiveSession, deleteSessionFile, getArchivedSessionIds, scanArchivedSessions, restoreSessionSource, encodeVaultPath, type SessionCard, type SessionDetail, type TurnBlock, type ArchivedSessionSummary } from '../data/sessionScanner';
+import { scanSessions, scanAllSessions, parseSessionTurns, archiveSessionFile, unarchiveSession, deleteSessionFile, getArchivedSessionIds, scanArchivedSessions, restoreSessionSource, encodeVaultPath, type SessionCard, type SessionDetail, type TurnBlock, type ArchivedSessionSummary, type SessionAgent } from '../data/sessionScanner';
+import { scanCodemSessions, parseCodemSessionTurns } from '../data/codemScanner';
 import { scanProjects, type ProjectInfo } from '../data/projectScanner';
-import { getSessionArchiveDir, getSessionRootDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride, removeSessionOverrides, getConfig } from '../data/settings';
+import { getSessionArchiveDir, getSessionRootDir, getSessionTitleOverride, setSessionTitleOverride, getSessionProjectOverride, setSessionProjectOverride, removeSessionOverrides, getConfig, getCodemRootDir, getCodemCliPath } from '../data/settings';
 
 // ===== 类型 =====
 type SidebarTab = 'projects' | 'general';
-type FilterKey = 'all' | 'daily' | 'today' | 'threeDays' | 'week' | 'archived' | 'turn5' | 'turn20' | 'turn20plus';
+// 'none' 为项目 Tab 的「未归类」筛选键，运行期一直在用但原类型定义遗漏，此处补齐
+// 通用 Tab 状态筛选键：archived/unarchived（存档态）、harvested/pendingHarvest（收割态）
+type FilterKey = 'all' | 'none' | 'daily' | 'today' | 'threeDays' | 'week' | 'archived' | 'unarchived' | 'harvested' | 'pendingHarvest' | 'turn5' | 'turn20' | 'turn20plus';
+
+/** 通用 Tab 日期筛选项（横向小按钮，一行三个） */
+const TIME_FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'today', label: '今日' },
+  { key: 'threeDays', label: '近三日' },
+  { key: 'week', label: '本周' },
+];
+
+/** 通用 Tab 轮次筛选项（横向小按钮，一行三个） */
+const TURN_FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'turn5', label: '≤5 轮' },
+  { key: 'turn20', label: '≤20 轮' },
+  { key: 'turn20plus', label: '20+ 轮' },
+];
+
+/** 通用 Tab 会话状态筛选项（存档态仅 Claude 有概念；收割态两个 Agent 都支持） */
+const GENERAL_STATUS_FILTERS: { key: FilterKey; icon: string; label: string; hint: string; claudeOnly?: boolean }[] = [
+  { key: 'unarchived', icon: '📭', label: '未存档', hint: '未创建存档副本的会话', claudeOnly: true },
+  { key: 'archived', icon: '📦', label: '已存档', hint: '已创建存档副本（含源文件被清理的仅存档会话）', claudeOnly: true },
+  { key: 'harvested', icon: '✅', label: '已收割', hint: '会话中出现过收割调用' },
+  { key: 'pendingHarvest', icon: '🌾', label: '待收割', hint: '从未执行过收割的会话' },
+];
 
 interface MenuGroup {
   root: string;
@@ -201,11 +226,44 @@ function BlockView({ block, isAssistant }: { block: TurnBlock; isAssistant?: boo
       </div>
     );
   }
+  if (block.kind === 'structured') {
+    return (
+      <div className="mswb-turn-block mswb-turn-structured">
+        <span className="mswb-turn-structured-badge">🧩 飞书附加信息（上下文 / 用户实体）</span>
+        <div className="mswb-turn-block-head" onClick={() => setOpen((v) => !v)}>
+          <span>{open ? '▾' : '▸'}展开附加信息</span>
+        </div>
+        {open && <div className="mswb-turn-block-body" style={{ padding: '4px 0' }}>
+          {(() => {
+            try {
+              const obj = JSON.parse(block.content);
+              if (obj && typeof obj === 'object') {
+                return <table className="mswb-structured-table">
+                  <tbody>
+                    {Object.entries(obj).map(([k, v]) => {
+                      let value = Array.isArray(v) ? v.join('、') : (v === null || v === undefined ? '' : String(v));
+                      if (value.length > 240) value = value.slice(0, 240) + '…';
+                      return <tr key={k}><td className="mswb-structured-key">{k}</td><td className="mswb-structured-value">{value}</td></tr>;
+                    })}
+                  </tbody>
+                </table>;
+              }
+              return <pre>{block.content}</pre>;
+            } catch {
+              return <pre>{block.content}</pre>;
+            }
+          })()}
+        </div>}
+      </div>
+    );
+  }
   return null;
 }
 
 // ===== 会话详情视图 =====
-function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: SessionDetail; onBack: () => void; onOpenInClaude: (sessionId: string) => void }) {
+function SessionDetailView({ detail, agent, onBack, onOpenInClaude }: { detail: SessionDetail; agent: SessionAgent; onBack: () => void; onOpenInClaude: (sessionId: string) => void }) {
+  const AGENT_LABEL: Record<SessionAgent, string> = { claude: '🤖 Claude', codem: '🏷 CodeM' };
+  const agentName = AGENT_LABEL[agent];
   const timeLabel = useMemo(() => {
     const fmt = (iso: string) => {
       if (!iso) return '';
@@ -232,13 +290,13 @@ function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: Session
       <div className="mswb-session-detail-bar">
         <button className="mswb-session-back" onClick={onBack}>← 返回列表</button>
         <span className="mswb-session-detail-title">{detail.aiTitle}</span>
-        <button
-          className="mswb-session-back"
-          onClick={() => onOpenInClaude(detail.sessionId)}
-          title="在 Claude Code 中打开此会话"
-        >
-          在 Claude 中打开
-        </button>
+          <button
+            className="mswb-session-back"
+            onClick={() => onOpenInClaude(detail.sessionId)}
+            title={agent === 'codem' ? '在 CodeM CLI 中打开此前会话' : '在 Claude Code 中打开此会话'}
+          >
+            {agent === 'codem' ? '在 CodeM 中打开' : '在 Claude 中打开'}
+          </button>
         <span className="mswb-session-detail-meta">{detail.userPrompts.length} 轮提问 · {detail.turns.length} 条消息 · {timeLabel}</span>
       </div>
 
@@ -263,7 +321,7 @@ function SessionDetailView({ detail, onBack, onOpenInClaude }: { detail: Session
             ref={(el) => { turnRefs.current[turn.lineIndex] = el; }}
             className={`mswb-turn mswb-turn-${turn.role}`}
           >
-            <div className="mswb-turn-role">{turn.role === 'user' ? '🧑 用户' : turn.role === 'tool' ? '⚙ 系统' : '🤖 Claude'}</div>
+            <div className="mswb-turn-role">{turn.role === 'user' ? '🧑 用户' : turn.role === 'tool' ? '⚙ 系统' : agentName}</div>
             <div className="mswb-turn-blocks">
               {turn.blocks.map((b, j) => <BlockView key={j} block={b} isAssistant={turn.role === 'assistant'} />)}
             </div>
@@ -280,6 +338,9 @@ function SessionCardView({ card, archived, sourceMissing, titleOverride, effecti
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /** CodeM 会话数据只读：仅标题可编辑，操作区不显示移动/存档/删除 */
+  const isCodemReadonly = card.agent === 'codem';
 
   const displayTitle = titleOverride || card.aiTitle;
 
@@ -352,17 +413,22 @@ function SessionCardView({ card, archived, sourceMissing, titleOverride, effecti
           </span>
         )}
         <span className="mswb-session-head-actions">
+          {/* 移动：Claude + CodeM 均可用（CodeM 只允许移动，不改数据文件；存档/删除保持只读隐藏） */}
           <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onMoveClick(card); }} title="移动项目">📂</button>
           {archived ? (
-            <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onUnarchive(card); }} title={sourceMissing ? '取消存档（此会话源文件已被 Claude 清理）' : '取消存档'}>{sourceMissing ? '🗄' : '↩️'}</button>
+            <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onUnarchive(card); }} title={sourceMissing ? '取消存档（此会话源文件已被 Claude 清理）' : '取消存档'} hidden={isCodemReadonly}>{sourceMissing ? '🗄' : '↩️'}</button>
           ) : (
-            <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onArchive(card); }} title="存档">📦</button>
+            <button className="mswb-session-icon-btn" onClick={(e) => { e.stopPropagation(); onArchive(card); }} title="存档" hidden={isCodemReadonly}>📦</button>
           )}
-          <button className="mswb-session-icon-btn mswb-session-icon-danger" onClick={(e) => { e.stopPropagation(); onDelete(card); }} title="删除会话">🗑</button>
+          <button className="mswb-session-icon-btn mswb-session-icon-danger" onClick={(e) => { e.stopPropagation(); onDelete(card); }} title="删除会话" hidden={isCodemReadonly}>🗑</button>
         </span>
       </div>
       <div className="mswb-session-meta-row" onClick={() => onOpen(card)}>
         <span className="mswb-session-time">{timeLabel}</span>
+        {/* 收割状态徽标：harvested=会话中出现过收割调用 */}
+        {card.harvestStatus === 'harvested' && (
+          <span className="mswb-session-badge mswb-session-badge-harvest" title="该会话执行过会话知识收割">✅ 已收割</span>
+        )}
         <span className="mswb-session-messages">{sourceMissing ? '副本 · 源文件已清理' : `${card.userTurns} 轮提问 · ${card.toolCalls} 次工具调用`}</span>
       </div>
       <div className="mswb-session-sub">
@@ -384,7 +450,7 @@ function SessionCardView({ card, archived, sourceMissing, titleOverride, effecti
       )}
       <div className="mswb-session-actions" style={{ position: 'relative' }}>
         <button className="mswb-session-action-btn" onClick={(e) => { e.stopPropagation(); onOpen(card); }}>查看详情</button>
-        <button className="mswb-session-action-btn" onClick={(e) => { e.stopPropagation(); onOpenInClaude(card); }}>{sourceMissing ? '恢复并续接' : '在 Claude 中打开'}</button>
+        <button className="mswb-session-action-btn" onClick={(e) => { e.stopPropagation(); onOpenInClaude(card); }}>{isCodemReadonly ? (sourceMissing ? '在 CodeM 中打开' : '在 CodeM 中打开') : (sourceMissing ? '恢复并续接' : '在 Claude 中打开')}</button>
       </div>
     </div>
   );
@@ -392,6 +458,7 @@ function SessionCardView({ card, archived, sourceMissing, titleOverride, effecti
 
 // ===== 主面板 =====
 export function SessionsPanel({ app }: { app: App }) {
+  const [activeAgent, setActiveAgent] = useState<SessionAgent>('claude');
   const [sessions, setSessions] = useState<SessionCard[]>([]);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -413,11 +480,33 @@ export function SessionsPanel({ app }: { app: App }) {
   // 当前 vault 绝对路径（恢复仅存档会话到源目录用）
   const vaultBasePathRef = useRef<string>('');
 
-  // 扫描会话
+  // 扫描会话（按当前 Agent 分发）
   const doScan = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      if (activeAgent === 'codem') {
+        // CodeM：全量扫描 ~/.codem/sessions，参与 vault 项目分组（cwd/@引用/标题语义三线索），无存档概念
+        const projectList = await scanProjects(app);
+        const knownPaths = projectList.map((p) => p.folderPath);
+        setProjects(projectList);
+        setArchivedIds(new Set());
+        setArchivedOnly([]);
+        const cards = await scanCodemSessions(getCodemRootDir(), knownPaths);
+        setSessions(cards);
+        // 标题覆盖 + 手动项目归属覆盖均支持（CodeM 只读数据文件，但允许本地记录移动/备注）
+        const overrides: Record<string, string> = {};
+        const projOverrides: Record<string, string | null> = {};
+        for (const s of cards) {
+          const ov = getSessionTitleOverride(s.sessionId);
+          if (ov) overrides[s.sessionId] = ov;
+          const po = getSessionProjectOverride(s.sessionId);
+          if (po !== undefined) projOverrides[s.sessionId] = po;
+        }
+        setTitleOverrides(overrides);
+        setSessionProjectOverrides(projOverrides);
+        return;
+      }
       const projectList = await scanProjects(app);
       const knownPaths = projectList.map((p) => p.folderPath);
       const vaultPath = (app.vault.adapter as any).getBasePath?.();
@@ -455,7 +544,7 @@ export function SessionsPanel({ app }: { app: App }) {
     } finally {
       setLoading(false);
     }
-  }, [app]);
+  }, [app, activeAgent]);
 
   useEffect(() => { doScan(); }, [doScan]);
 
@@ -465,7 +554,10 @@ export function SessionsPanel({ app }: { app: App }) {
     setDetailError(null);
     setDetail(null);
     try {
-      const d = await parseSessionTurns(card.filePath);
+      // 按 Agent 选择解析器：CodeM jsonl 事件结构与 Claude 不同，不能共用
+      const d = card.agent === 'codem'
+        ? await parseCodemSessionTurns(card.filePath)
+        : await parseSessionTurns(card.filePath);
       if (!d) { setDetailError('读取会话失败'); setDetailLoading(false); return; }
       d.sessionId = card.sessionId;
       if (!d.aiTitle) d.aiTitle = card.aiTitle;
@@ -479,8 +571,32 @@ export function SessionsPanel({ app }: { app: App }) {
 
   const openInClaude = useCallback(async (card: SessionCard | string) => {
     const sessionId = typeof card === 'string' ? card : card.sessionId;
+    const agent = typeof card === 'string' ? activeAgent : card.agent;
     let cwd = typeof card === 'string' ? '' : card.cwd;
     try {
+      // CodeM：独立终端窗口复用 session id 续接（codem --session <id>）
+      if (agent === 'codem') {
+        const cli = getCodemCliPath();
+        // 与 claude 分支同款：shell:true 把整条命令行交给 cmd /c 执行，
+        // 批处理启动器由 cmd 自行解析（start "" cmd /k 会把带引号路径误判为外部命令，已废弃）
+        const res = spawn(`"${cli}" --session ${sessionId}`, {
+          detached: true,
+          stdio: 'ignore',
+          shell: true,
+          windowsHide: false, // 显示终端窗口（cmd /c 等待交互式 codem 退出后窗口才关闭）
+          cwd: cwd || undefined,
+        });
+        res.on('error', (err: any) => {
+          if (err?.code === 'ENOENT') {
+            new Notice('未找到 codem 命令，请检查 CodeM 安装或设置页配置 codem CLI 路径');
+          } else {
+            new Notice(`打开 CodeM 失败：${err?.message || err}`);
+          }
+        });
+        res.unref();
+        new Notice('正在打开 CodeM…');
+        return;
+      }
       // 仅存档会话（源文件已被清理）：先把存档副本恢复到源目录，再续接
       if (typeof card !== 'string' && !card.cwd && vaultBasePathRef.current) {
         const archiveDir = getSessionArchiveDir();
@@ -496,7 +612,6 @@ export function SessionsPanel({ app }: { app: App }) {
       // 用 spawn 以 detached 模式启动 claude，完全与 Obsidian 进程解耦
       // detached: true 让子进程独立运行，不附加到父进程
       // stdio: 'ignore' 不监听 stdin/stdout/stderr，避免任何管道错误
-      // shell: true Windows 上需要来执行 .cmd 批处理文件
       // windowsHide: false 让终端窗口可见
       const res = spawn('claude', ['--resume', sessionId], {
         detached: true,
@@ -516,12 +631,13 @@ export function SessionsPanel({ app }: { app: App }) {
       res.unref(); // 解除引用，父进程退出不影响子进程
       new Notice('正在打开 Claude Code…');
     } catch (e: any) {
-      new Notice(`打开 Claude 失败：${e?.message || e}`);
+      new Notice(agent === 'codem' ? `打开 CodeM 失败：${e?.message || e}` : `打开 Claude 失败：${e?.message || e}`);
     }
-  }, []);
+  }, [activeAgent]);
 
   // 存档
   const handleArchive = useCallback(async (card: SessionCard) => {
+    if (card.agent === 'codem') { new Notice('CodeM 会话为只读数据，不支持存档'); return; }
     const archiveDir = getSessionArchiveDir();
     const result = await archiveSessionFile(card.filePath, archiveDir);
     if (result.success) {
@@ -541,6 +657,7 @@ export function SessionsPanel({ app }: { app: App }) {
 
   // 取消存档
   const handleUnarchive = useCallback(async (card: SessionCard) => {
+    if (card.agent === 'codem') { new Notice('CodeM 会话为只读数据，不支持取消存档'); return; }
     try {
       const archiveDir = getSessionArchiveDir();
       const result = await unarchiveSession(card.sessionId, archiveDir);
@@ -563,6 +680,7 @@ export function SessionsPanel({ app }: { app: App }) {
 
   // 删除会话（卡片 + 存档 + 覆盖记录一并删除）
   const handleDelete = useCallback(async (card: SessionCard) => {
+    if (card.agent === 'codem') { new Notice('CodeM 会话为只读数据，删除会破坏非 vault 数据，已阻止'); return; }
     if (!confirm(`确定要删除会话「${card.aiTitle}」吗？\n将删除源文件及其存档副本，此操作不可恢复。`)) return;
     try {
       const errs: string[] = [];
@@ -632,52 +750,45 @@ export function SessionsPanel({ app }: { app: App }) {
     setMoveTarget(card);
   }, []);
 
-  // 项目分组（按会话数量降序排列）— 根目录来自配置，不硬编码
+  // 项目分组（按会话数量降序排列）— 根目录来自配置，不硬编码；会话数为 0 的项目隐藏
   const menuGroups = useMemo<MenuGroup[]>(() => {
     const roots = getConfig().projectRoots.length > 0 ? getConfig().projectRoots : [];
     return roots.map((root) => ({
       root,
       projects: projects
         .filter((p) => p.folderPath.startsWith(root + '/'))
+        .filter((p) => projectCount(p.folderPath) > 0) // 隐藏 0 会话项目
         .sort((a, b) => projectCount(b.folderPath) - projectCount(a.folderPath)),
+    })).filter((g) => g.projects.length > 0);
+  }, [projects, projectCount]);
+
+  // 移动弹窗可分组的项目（按 projectRoots 上级文件夹分组；移动弹窗显示全部项目文件夹，不隐藏 0 会话项目）
+  const moveGroups = useMemo(() => {
+    const roots = getConfig().projectRoots.length > 0 ? getConfig().projectRoots : [];
+    return roots.map((root) => ({
+      root,
+      projects: projects
+        .filter((p) => p.folderPath.startsWith(root + '/'))
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh')),
     })).filter((g) => g.projects.length > 0);
   }, [projects]);
 
   // 右侧过滤
   const filteredSessions = useMemo(() => {
     let list = [...sessions];
-    // 用 override 覆盖 projectRef（如果存在）
+    // 项目 Tab：Claude + CodeM 共用（按项目归属过滤；日常仅 Claude 有）
     if (activeSidebarTab === 'projects') {
       const effectiveProject = (s: SessionCard) => {
         const ov = sessionProjectOverrides?.[s.sessionId];
-        if (ov === '__daily__') return '__daily__';
-        return ov !== undefined ? ov : s.projectRef.projectPath;
+        if (ov === undefined) return s.projectRef.projectPath;
+        if (ov === '__daily__') return activeAgent === 'claude' ? '__daily__' : s.projectRef.projectPath;
+        return ov;
       };
       if (selectedProject) {
         list = list.filter((s) => effectiveProject(s) === selectedProject);
       } else if (selectedFilter === 'none') {
         list = list.filter((s) => effectiveProject(s) === null);
-      } else if (selectedFilter === 'archived') {
-        // 已存档视图 = 源文件存在的已存档会话 + 仅存档的会话（源文件已被清理，用存档补齐）
-        const srcKeys = new Set(sessions.map((s) => s.sessionId));
-        const archivedOnlySessions: SessionCard[] = archivedOnly
-          .filter((a) => !srcKeys.has(a.sessionId)) // 查重：源文件存在的不补齐
-          .map((a) => ({
-            sessionId: a.sessionId,
-            aiTitle: a.aiTitle || a.firstPrompt.slice(0, 40) || '(无标题)',
-            firstPrompt: a.firstPrompt,
-            startTime: a.lastTime,
-            lastTime: a.lastTime,
-            userTurns: 0,
-            toolCalls: 0,
-            cwd: '',
-            projectRef: a.projectRef, // 继承存档副本内重新匹配的项目归属（原分组）
-            filePath: a.latestPath,
-            entrySource: '命令行',
-            skills: [],
-          }));
-        list = [...sessions.filter((s) => archivedIds.has(s.sessionId)), ...archivedOnlySessions];
-      } else if (selectedFilter === 'daily') {
+      } else if (selectedFilter === 'daily' && activeAgent === 'claude') {
         // 日常：手动标记为 __daily__ 的会话
         list = list.filter((s) => sessionProjectOverrides?.[s.sessionId] === '__daily__');
       }
@@ -718,17 +829,59 @@ export function SessionsPanel({ app }: { app: App }) {
         list = list.filter((s) => s.userTurns > 20);
       }
     }
+
+    // 会话状态筛选（通用 Tab 专属：未存档/已存档/已收割/待收割）
+    // 基于全量会话（含仅存档会话补充）独立过滤，不叠加时间/轮次，互斥选择
+    if (activeSidebarTab === 'general' && (selectedFilter === 'unarchived' || selectedFilter === 'archived' || selectedFilter === 'harvested' || selectedFilter === 'pendingHarvest')) {
+      const srcKeys = new Set(sessions.map((s) => s.sessionId));
+      const archivedOnlySessions: SessionCard[] = archivedOnly
+        .filter((a) => !srcKeys.has(a.sessionId)) // 查重：源文件仍在的不补齐
+        .map((a) => ({
+          sessionId: a.sessionId,
+          agent: 'claude',
+          aiTitle: a.aiTitle || a.firstPrompt.slice(0, 40) || '(无标题)',
+          firstPrompt: a.firstPrompt,
+          startTime: a.lastTime,
+          lastTime: a.lastTime,
+          userTurns: 0,
+          toolCalls: 0,
+          cwd: '',
+          projectRef: a.projectRef, // 继承存档副本内重新匹配的项目归属（原分组）
+          filePath: a.latestPath,
+          entrySource: '命令行',
+          skills: [],
+          harvestStatus: 'none', // 仅存档会话无源文件可查收割，恒 none
+          lastHarvestAt: null,
+        }));
+      // 全量可见会话：源文件会话 + 仅存档会话（后者 id 也已并入 archivedIds）
+      const allVisible = [...sessions, ...archivedOnlySessions];
+      if (selectedFilter === 'unarchived') {
+        list = allVisible.filter((s) => !archivedIds.has(s.sessionId));
+      } else if (selectedFilter === 'archived') {
+        list = allVisible.filter((s) => archivedIds.has(s.sessionId));
+      } else if (selectedFilter === 'harvested') {
+        list = allVisible.filter((s) => s.harvestStatus === 'harvested');
+      } else if (selectedFilter === 'pendingHarvest') {
+        list = allVisible.filter((s) => s.harvestStatus !== 'harvested');
+      }
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        list = list.filter((s) => (titleOverrides[s.sessionId] || s.aiTitle).toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q));
+      }
+      return list;
+    }
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter((s) => (titleOverrides[s.sessionId] || s.aiTitle).toLowerCase().includes(q) || s.firstPrompt.toLowerCase().includes(q));
     }
     return list;
-  }, [sessions, activeSidebarTab, selectedProject, selectedFilter, search, archivedIds, archivedOnly, titleOverrides, sessionProjectOverrides]);
+  }, [sessions, activeSidebarTab, activeAgent, selectedProject, selectedFilter, search, archivedIds, archivedOnly, titleOverrides, sessionProjectOverrides]);
 
   // 一键存档当前筛选结果
   // ⚠️ 必须在 filteredSessions 声明之后定义：useCallback 依赖数组在定义时求值，
   // 引用后声明的 const 会触发 TDZ（Cannot access 'X' before initialization），导致整个面板白屏
   const handleBulkArchive = useCallback(async () => {
+    // CodeM 数据只读：无存档概念，按钮在 UI 层已隐藏，此处兜底防直接触发
     if (bulkArchiving) return;
     const targets = filteredSessions.filter((s) => !archivedIds.has(s.sessionId));
     if (targets.length === 0) {
@@ -758,11 +911,14 @@ export function SessionsPanel({ app }: { app: App }) {
   const currentTitle = useMemo(() => {
     if (activeSidebarTab === 'projects') {
       if (selectedProject) return selectedProject.replace(/^[^/]+\//, '');
-      if (selectedFilter === 'none') return '未归类会话';
-      if (selectedFilter === 'daily') return '日常会话';
-      if (selectedFilter === 'archived') return '已存档';
+      if (selectedFilter === 'none') return '未归类会话'; // 非 FilterKey 成员，绕开类型系统（全状态 only）
+      if (selectedFilter === 'daily' && activeAgent === 'claude') return '日常会话';
       return '全部会话';
     }
+    if (selectedFilter === 'archived' && activeAgent === 'claude') return '已存档';
+    if (selectedFilter === 'unarchived' && activeAgent === 'claude') return '未存档';
+    if (selectedFilter === 'harvested') return '已收割';
+    if (selectedFilter === 'pendingHarvest') return '待收割';
     if (selectedFilter === 'today') return '今日会话';
     if (selectedFilter === 'threeDays') return '近三日会话';
     if (selectedFilter === 'week') return '本周会话';
@@ -770,7 +926,7 @@ export function SessionsPanel({ app }: { app: App }) {
     if (selectedFilter === 'turn20') return '≤20 轮提问';
     if (selectedFilter === 'turn20plus') return '20+ 轮提问';
     return '全部会话';
-  }, [activeSidebarTab, selectedProject, selectedFilter]);
+  }, [activeSidebarTab, activeAgent, selectedProject, selectedFilter]);
 
   // 已存档计数 = 源文件存在的已存档 + 仅存档的会话（与已存档视图一致）
   const archivedCount = useMemo(() => {
@@ -798,8 +954,8 @@ export function SessionsPanel({ app }: { app: App }) {
       return (
         <div className="mswb-sessions-empty">
           <div style={{ fontSize: 32 }}>💬</div>
-          <p>未发现 Claude 会话</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>检查设置页「Claude 会话目录」配置</p>
+          <p>{activeAgent === 'codem' ? '未发现 CodeM 会话' : '未发现 Claude 会话'}</p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{activeAgent === 'codem' ? '检查设置页「CodeM 会话目录」配置' : '检查设置页「Claude 会话目录」配置'}</p>
           <button className="mswb-sessions-refresh-btn" onClick={doScan}>🔄 重新扫描</button>
         </div>
       );
@@ -834,13 +990,18 @@ export function SessionsPanel({ app }: { app: App }) {
               <div className="mswb-session-move-item" onClick={() => { handleMoveProject(moveTarget.sessionId, '__daily__'); }}>
                 📔 日常
               </div>
-              {projects.map((p) => (
-                <div
-                  key={p.folderPath}
-                  className="mswb-session-move-item"
-                  onClick={() => { handleMoveProject(moveTarget.sessionId, p.folderPath); }}
-                >
-                  {p.emoji || '📁'} {p.name}
+              {moveGroups.map((g) => (
+                <div key={g.root} className="mswb-session-move-group">
+                  <div className="mswb-session-move-group-title">{g.root}</div>
+                  {g.projects.map((p) => (
+                    <div
+                      key={p.folderPath}
+                      className="mswb-session-move-item"
+                      onClick={() => { handleMoveProject(moveTarget.sessionId, p.folderPath); }}
+                    >
+                      {p.emoji || '📁'} {p.name}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
@@ -850,7 +1011,7 @@ export function SessionsPanel({ app }: { app: App }) {
 
       {/* 详情视图优先 */}
       {detail ? (
-        <SessionDetailView detail={detail} onBack={() => setDetail(null)} onOpenInClaude={openInClaude} />
+        <SessionDetailView detail={detail} agent={activeAgent} onBack={() => setDetail(null)} onOpenInClaude={openInClaude} />
       ) : detailLoading ? (
         <div className="mswb-sessions-empty">读取会话内容…</div>
       ) : detailError ? (
@@ -863,11 +1024,34 @@ export function SessionsPanel({ app }: { app: App }) {
         <>
           {/* 顶部栏 */}
           <div className="mswb-sessions-header">
-            <span className="mswb-sessions-title">💬 会话</span>
+            <div className="mswb-sessions-header-left">
+              <span className="mswb-sessions-title">💬 会话</span>
+              <select
+                className="mswb-agent-select"
+                value={activeAgent}
+                onChange={(e) => {
+                  const next = e.target.value as SessionAgent;
+                  if (next === activeAgent) return;
+                  setActiveAgent(next);
+                  // 切换 Agent：重置筛选/搜索/详情，避免跨源残留
+                  setDetail(null);
+                  setSelectedProject(null);
+                  setSelectedFilter('all');
+                  setSearch('');
+                  // Claude 与 CodeM 均支持项目分组 → 保持当前 Tab，无需强制切换
+                }}
+                title="切换会话数据源"
+              >
+                <option value="claude">🤖 Claude Code</option>
+                <option value="codem">🏷 CodeM</option>
+              </select>
+            </div>
             <div className="mswb-sessions-header-actions">
-              <button className="mswb-sessions-refresh-btn" onClick={handleBulkArchive} disabled={bulkArchiving} title="对当前筛选列表的会话创建存档副本（不删除源文件）">
-                {bulkArchiving ? '存档中…' : `📦 存档当前${filteredSessions.length > 0 ? ` (${filteredSessions.length})` : ''}`}
-              </button>
+              {activeAgent === 'claude' && (
+                <button className="mswb-sessions-refresh-btn" onClick={handleBulkArchive} disabled={bulkArchiving} title="对当前筛选列表的会话创建存档副本（不删除源文件）">
+                  {bulkArchiving ? '存档中…' : `📦 存档当前${filteredSessions.length > 0 ? ` (${filteredSessions.length})` : ''}`}
+                </button>
+              )}
               <button className="mswb-sessions-refresh-btn" onClick={doScan} disabled={loading}>
                 {loading ? '扫描中…' : '🔄 刷新'}
               </button>
@@ -890,10 +1074,10 @@ export function SessionsPanel({ app }: { app: App }) {
                 >通用</button>
               </div>
 
-              {/* 项目 Tab */}
+              {/* 项目 Tab（Claude + CodeM 共用：按项目文件夹分组，CodeM 无日常/存档概念） */}
               {activeSidebarTab === 'projects' && (
                 <div className="mswb-sessions-menu">
-                  {/* 顶部固定项：全部 / 未归类 / 已存档 */}
+                  {/* 顶部固定项：全部 / 未归类（存档/日常仅 Claude 有概念） */}
                   <div className="mswb-sessions-menu-group">
                     <div className="mswb-sessions-menu-item mswb-sessions-menu-all" onClick={() => { setSelectedProject(null); setSelectedFilter('all'); }}>
                       <span className="mswb-sessions-menu-icon">📆</span>
@@ -905,16 +1089,13 @@ export function SessionsPanel({ app }: { app: App }) {
                       <span className="mswb-sessions-menu-name">未归类</span>
                       <span className="mswb-sessions-menu-count">{projectCount(null)}</span>
                     </div>
-                    <div className="mswb-sessions-menu-item" onClick={() => { setSelectedProject(null); setSelectedFilter('daily'); }}>
-                      <span className="mswb-sessions-menu-icon">📔</span>
-                      <span className="mswb-sessions-menu-name">日常</span>
-                      <span className="mswb-sessions-menu-count">{sessions.filter((s) => sessionProjectOverrides?.[s.sessionId] === '__daily__').length}</span>
-                    </div>
-                    <div className="mswb-sessions-menu-item" onClick={() => { setSelectedProject(null); setSelectedFilter('archived'); }}>
-                      <span className="mswb-sessions-menu-icon">📦</span>
-                      <span className="mswb-sessions-menu-name">已存档</span>
-                      <span className="mswb-sessions-menu-count">{archivedCount}</span>
-                    </div>
+                    {activeAgent === 'claude' && (
+                      <div className="mswb-sessions-menu-item" onClick={() => { setSelectedProject(null); setSelectedFilter('daily'); }}>
+                        <span className="mswb-sessions-menu-icon">📔</span>
+                        <span className="mswb-sessions-menu-name">日常</span>
+                        <span className="mswb-sessions-menu-count">{sessions.filter((s) => sessionProjectOverrides?.[s.sessionId] === '__daily__').length}</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* 项目分组（可折叠） */}
@@ -957,25 +1138,61 @@ export function SessionsPanel({ app }: { app: App }) {
                       onChange={(e) => setSearch(e.target.value)}
                     />
                   </div>
+                  {/* 日期维度：今日 / 近三日 / 本周（横向小按钮） */}
+                  <div className="mswb-sessions-menu-group mswb-filter-group">
+                    <div className="mswb-sessions-menu-group-title">日期</div>
+                    <div className="mswb-filter-row">
+                      {TIME_FILTERS.map((item) => (
+                        <button
+                          key={item.key}
+                          className={`mswb-filter-chip${selectedFilter === item.key ? ' active' : ''}`}
+                          onClick={() => { setSelectedFilter(item.key); setSelectedProject(null); }}
+                        >{item.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 轮次维度：≤5 轮 / ≤20 轮 / 20+ 轮（横向小按钮） */}
+                  <div className="mswb-sessions-menu-group mswb-filter-group">
+                    <div className="mswb-sessions-menu-group-title">轮次</div>
+                    <div className="mswb-filter-row">
+                      {TURN_FILTERS.map((item) => (
+                        <button
+                          key={item.key}
+                          className={`mswb-filter-chip${selectedFilter === item.key ? ' active' : ''}`}
+                          onClick={() => { setSelectedFilter(item.key); setSelectedProject(null); }}
+                        >{item.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 会话状态筛选：未存档 / 已存档 / 已收割 / 待收割（互斥，点击即切换） */}
                   <div className="mswb-sessions-menu-group">
-                    {[
-                      { key: 'all', icon: '📆', label: '全部' },
-                      { key: 'today', icon: '📅', label: '今日' },
-                      { key: 'threeDays', icon: '📅', label: '近三日' },
-                      { key: 'week', icon: '📅', label: '本周' },
-                      { key: 'turn5', icon: '🔄', label: '≤5 轮' },
-                      { key: 'turn20', icon: '🔄', label: '≤20 轮' },
-                      { key: 'turn20plus', icon: '🔄', label: '20+ 轮' },
-                    ].map((item) => (
-                      <div
-                        key={item.key}
-                        className={`mswb-sessions-menu-item ${selectedFilter === (item.key as FilterKey) && !search ? 'active' : ''}`}
-                        onClick={() => { setSelectedFilter(item.key as FilterKey); setSelectedProject(null); }}
-                      >
-                        <span className="mswb-sessions-menu-icon">{item.icon}</span>
-                        <span className="mswb-sessions-menu-name">{item.label}</span>
-                      </div>
-                    ))}
+                    {GENERAL_STATUS_FILTERS.map((item) => {
+                      const isCodemVisible = !item.claudeOnly || activeAgent === 'claude';
+                      if (!isCodemVisible) return null;
+                      return (
+                        <div
+                          key={item.key}
+                          className={`mswb-sessions-menu-item ${selectedFilter === item.key && !search ? 'active' : ''}`}
+                          onClick={() => { setSelectedFilter(item.key); setSelectedProject(null); }}
+                          title={item.hint}
+                        >
+                          <span className="mswb-sessions-menu-icon">{item.icon}</span>
+                          <span className="mswb-sessions-menu-name">{item.label}</span>
+                          {item.key === 'unarchived' && (
+                            <span className="mswb-sessions-menu-count">{sessions.filter((s) => !archivedIds.has(s.sessionId)).length}</span>
+                          )}
+                          {item.key === 'archived' && (
+                            <span className="mswb-sessions-menu-count">{archivedCount}</span>
+                          )}
+                          {item.key === 'harvested' && (
+                            <span className="mswb-sessions-menu-count">{sessions.filter((s) => s.harvestStatus === 'harvested').length}</span>
+                          )}
+                          {item.key === 'pendingHarvest' && (
+                            <span className="mswb-sessions-menu-count">{sessions.filter((s) => s.harvestStatus !== 'harvested').length}</span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

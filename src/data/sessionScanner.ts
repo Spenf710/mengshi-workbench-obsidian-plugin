@@ -28,6 +28,10 @@ interface JsonlMeta {
   projectEvidence: string;
   entrySource: string;
   skills: string[];
+  /** 收割状态：harvested=会话中出现过收割调用；none=从未收割 */
+  harvestStatus: HarvestStatus;
+  /** 最后一次收割调用时间 ISO */
+  lastHarvestAt: string | null;
 }
 const fileCache = new Map<string, { size: number; mtimeMs: number; meta: JsonlMeta | null }>();
 
@@ -48,8 +52,16 @@ export interface ProjectRef {
   evidence: string;
 }
 
+/** 会话来源 Agent。claude = Claude Code，codem = 飞书 CodeM */
+export type SessionAgent = 'claude' | 'codem';
+
+/** 收割状态：harvested=会话中出现过收割调用（SKILL 工具 / 斜杠命令 / openInClaude 收割模式均会调用 Skill 工具）；none=从未收割 */
+export type HarvestStatus = 'harvested' | 'none';
+
 export interface SessionCard {
   sessionId: string;
+  /** 所在数据源类型 */
+  agent: SessionAgent;
   /** AI 自动生成的标题（取最后一条 ai-title 事件） */
   aiTitle: string;
   /** 用户首条 prompt，作主题预览 */
@@ -72,6 +84,10 @@ export interface SessionCard {
   entrySource: string;
   /** 会话内调用的 skill 名集合（判断日常操作：日志/周报等） */
   skills: string[];
+  /** 收割状态：harvested=会话中出现过收割调用；none=从未收割 */
+  harvestStatus: HarvestStatus;
+  /** 最后一次收割调用时间 ISO */
+  lastHarvestAt: string | null;
 }
 
 // ===== Vault 路径编码 =====
@@ -97,7 +113,7 @@ export function encodeVaultPath(vaultPath: string): string {
 // ===== 文本提取 =====
 
 /** 判断 user 消息是否是纯 tool_result 回传（非人的实际输入） */
-function isToolResultTurn(content: unknown): boolean {
+export function isToolResultTurn(content: unknown): boolean {
   if (Array.isArray(content)) {
     return content.length > 0 && content.every((b: any) => b?.type === 'tool_result');
   }
@@ -106,12 +122,12 @@ function isToolResultTurn(content: unknown): boolean {
 
 /** 判断 user 消息是否是系统自动注入（非人的实际输入）
  *  真实用户输入 content 是纯字符串，系统注入 content 是数组 */
-function isSystemInjected(obj: any): boolean {
+export function isSystemInjected(obj: any): boolean {
   return Array.isArray(obj.message?.content) && !isToolResultTurn(obj.message?.content);
 }
 
 /** 从一行 message.content 提取纯文本（user 是字符串，assistant 是 block 数组） */
-function extractText(content: unknown): string {
+export function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
@@ -202,11 +218,20 @@ export interface SessionRaw {
   textChunks: string[];
   /** 会话内调用的 skill 名集合（识别日志/周报等日常操作） */
   skills: string[];
+  /** 最后一次收割调用时间 ISO */
+  lastHarvestAt: string | null;
+  /** 会话中出现过收割调用 */
+  harvestIsLast: boolean;
+  /** 收割状态：harvested=会话中出现过收割调用；none=从未收割 */
+  harvestStatus: HarvestStatus;
 }
 
 // ===== 日常操作 skill 识别 =====
 // 命中这些 skill 的会话归入"日常"抽屉：日志、周报、日报、站会等
 const DAILY_SKILLS = ['work-log-refine', 'weekly-report', 'lark-workflow-standup-report', 'lark-workflow-meeting-summary'];
+
+/** 收割 Skill 名称变体（assistant tool_use[Skill] 的 input.skill 入参） */
+const HARVEST_SKILL_NAMES = ['session-harvest', 'session_harvest', 'sessionHarvest'];
 
 /** 从一行内容提取 <command-name>/xxx</command-name> 或 Skill("xxx") 调用的 skill 名 */
 function extractSkillNames(content: unknown): string[] {
@@ -224,6 +249,23 @@ function extractSkillNames(content: unknown): string[] {
   return names;
 }
 
+/**
+ * 判断一段 user 原文是否为收割指令（仅两种硬信号，讨论收割 ≠ 执行收割）：
+ *   1. 斜杠命令注入：`<command-name>/session-harvest</command-name>`（claude 会话用户消息里出现，执行收割的硬信号）
+ *   2. SKILL 定义注入：user 消息含「会话知识收割 Skill」标题 + 该 SKILL 的 Base directory（执行收割时系统才会注入 SKILL.md 正文）
+ * 命中即视为该会话执行过收割。**不包含**「文本提到 session-harvest 字样」类宽松匹配——
+ * 用户讨论收割逻辑/复述需求时同样会提到该词，会误判为已收割（实测：讨论收割边界的会话被误标）。
+ * 真实收割几乎必然伴随以上两种注入之一（或 assistant 侧 tool_use Skill 调用），不会漏检。
+ */
+function isHarvestInstruction(text: string): boolean {
+  if (!text) return false;
+  // 1. 斜杠命令：<command-name>/session-harvest</command-name> 或 <command-message>session-harvest</command-message>
+  if (/<command-(?:name|message)>\s*?\/?\s*?session[-_]harvest/i.test(text)) return true;
+  // 2. SKILL 定义注入：heading 含「会话知识收割 Skill」+ Base directory for this skill
+  if (text.includes('会话知识收割 Skill') && text.includes('Base directory for this skill')) return true;
+  return false;
+}
+
 /** 流式按行解析单个 .jsonl，抽元信息 + 文本块（供项目归属分析） */
 export async function parseSessionFile(filePath: string): Promise<SessionRaw | null> {
   return new Promise((resolve) => {
@@ -237,6 +279,9 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
     let firstUserFound = false;
     const textChunks: string[] = [];
     const skills: string[] = [];
+    // [收割元信息] 收割调用：记录每次收割触发的时间（SKILL 调用 / 斜杠命令 / user 发起的收割指令）；出现即视为已收割
+    let lastHarvestAt: string | null = null;
+    let sawHarvest = false;        // 是否出现过收割触发
 
     const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
     let buf = '';
@@ -276,6 +321,11 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
           if (!isToolResultTurn(obj.message?.content) && !isSystemInjected(obj)) {
             userTurns++;
             const text = extractText(obj.message?.content);
+            // [收割判定] 用户消息里出现收割指令（斜杠命令 / SKILL 定义注入）→ 该会话执行过收割
+            if (isHarvestInstruction(text)) {
+              sawHarvest = true;
+              if (ts) lastHarvestAt = ts;
+            }
             // 性能优化：textChunks 仅保留前 3 条，足够做项目归属三线索匹配（@引用/[[链接]]/标题）
             // 此前会把整场对话全量文本驻留内存（大会话可累积数 MB）
             if (text && textChunks.length < 3) {
@@ -290,11 +340,22 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
             }
           }
         } else if (t === 'assistant') {
-          // 统计 tool_use 块数 = 真实工具调用次数
+          // 统计 tool_use 块数 + 回收【收割】调用（Skill tool_use 且参数含 session-harvest）
           const content = obj.message?.content;
+          const ts = obj.timestamp as string | undefined;
           if (Array.isArray(content)) {
             for (const b of content) {
-              if (b?.type === 'tool_use') toolCalls++;
+              if (b?.type !== 'tool_use') continue;
+              toolCalls++;
+              // 收割判定：Skill 工具且入参定位到 session-harvest（实测字段 b.input.skill，兼收 skill_name 变体）
+              const sn = (b.name === 'Skill' && b.input && 'skill' in b.input && typeof (b.input as any).skill === 'string')
+                ? (b.input as any).skill
+                : (b.name === 'Skill' && b.input && typeof (b.input as any).skill_name === 'string' ? (b.input as any).skill_name : '');
+              if (sn && HARVEST_SKILL_NAMES.some((name) => sn.includes(name))) {
+                skills.push('session-harvest'); // 沿既有 skills 集合
+                sawHarvest = true;
+                if (ts) lastHarvestAt = ts;    // 取最后一次调用的时间
+              }
             }
           }
         }
@@ -310,7 +371,8 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
           /* ignore */
         }
       }
-      resolve({ aiTitle, firstPrompt, startTime, lastTime, userTurns, toolCalls, cwd, textChunks, skills });
+      const harvestStatus: HarvestStatus = sawHarvest ? 'harvested' : 'none';
+      resolve({ aiTitle, firstPrompt, startTime, lastTime, userTurns, toolCalls, cwd, textChunks, skills, lastHarvestAt: lastHarvestAt || null, harvestIsLast: sawHarvest, harvestStatus });
     });
 
     stream.on('error', () => resolve(null));
@@ -320,10 +382,10 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
 // ===== 完整轮次解析（详情视图用） =====
 
 export interface TurnBlock {
-  kind: 'text' | 'thinking' | 'tool_use' | 'tool_result';
-  /** text→正文；thinking→思考；tool_use→工具名；tool_result→占位提示 */
+  kind: 'text' | 'thinking' | 'tool_use' | 'tool_result' | 'structured';
+  /** text→正文；thinking→思考；tool_use→工具名；tool_result→占位提示；structured→CodeM 结构化键值 */
   label?: string;
-  /** text/thinking: 正文内容；tool_use: 工具输入 JSON */
+  /** text/thinking: 正文内容；tool_use: 工具输入 JSON；structured: 结构化键值 JSON 串 */
   content: string;
 }
 
@@ -499,6 +561,8 @@ export async function scanSessions(
           projectEvidence: projectRef!.evidence,
           entrySource,
           skills: raw.skills,
+          harvestStatus: raw.harvestStatus,
+          lastHarvestAt: raw.lastHarvestAt,
         } : null;
         fileCache.set(filePath, { size: st.size, mtimeMs: st.mtimeMs, meta });
       }
@@ -511,6 +575,7 @@ export async function scanSessions(
       };
       const card: SessionCard = {
         sessionId,
+        agent: 'claude',
         aiTitle: meta.aiTitle,
         firstPrompt: meta.firstPrompt,
         startTime: meta.startTime,
@@ -522,6 +587,8 @@ export async function scanSessions(
         filePath,
         entrySource: meta.entrySource,
         skills: meta.skills,
+        harvestStatus: meta.harvestStatus,
+        lastHarvestAt: meta.lastHarvestAt,
       };
       return card;
     }),
@@ -584,6 +651,8 @@ export async function scanAllSessions(
           projectEvidence: projectRef!.evidence,
           entrySource,
           skills: raw.skills,
+          harvestStatus: raw.harvestStatus,
+          lastHarvestAt: raw.lastHarvestAt,
         } : null;
         fileCache.set(filePath, { size: st.size, mtimeMs: st.mtimeMs, meta });
       }
@@ -596,6 +665,7 @@ export async function scanAllSessions(
       };
       sessions.push({
         sessionId: f.replace(/\.jsonl$/, ''),
+        agent: 'claude',
         aiTitle: meta.aiTitle,
         firstPrompt: meta.firstPrompt,
         startTime: meta.startTime,
@@ -607,6 +677,8 @@ export async function scanAllSessions(
         filePath,
         entrySource: meta.entrySource,
         skills: meta.skills,
+        harvestStatus: meta.harvestStatus,
+        lastHarvestAt: meta.lastHarvestAt,
       });
     }
   }

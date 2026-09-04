@@ -179,6 +179,27 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           .onChange((v) => { sessionText.archiveDir = v; });
       });
 
+    // ===== CodeM 会话 =====
+    new Setting(containerEl).setHeading().setName('🏷 CodeM 会话');
+
+    new Setting(containerEl)
+      .setName('CodeM 会话目录')
+      .setDesc('CodeM 会话 .jsonl 根目录，默认 ~/.codem/sessions')
+      .addText((t) => {
+        t.setValue(sessionCfg.codemRootDir)
+          .setPlaceholder('C:\\Users\\xxx\\.codem\\sessions')
+          .onChange((v) => { sessionText.codemRootDir = v; });
+      });
+
+    new Setting(containerEl)
+      .setName('codem CLI 路径')
+      .setDesc('「在 CodeM 中打开」续接会话用，留空自动检测（codem）')
+      .addText((t) => {
+        t.setValue(sessionCfg.codemCliPath)
+          .setPlaceholder('codem')
+          .onChange((v) => { sessionText.codemCliPath = v; });
+      });
+
     // ===== 飞书 =====
     const feishuCfg = { ...getFeishuConfig() };
     const feishuText: any = {};
@@ -209,6 +230,8 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
             sessionRootDir: sessionText.sessionRootDir ?? '',
             claudeCliPath: sessionText.claudeCliPath ?? '',
             archiveDir: sessionText.archiveDir ?? '',
+            codemRootDir: sessionText.codemRootDir ?? '',
+            codemCliPath: sessionText.codemCliPath ?? '',
           });
           await setFeishuConfig({
             larkCliPath: feishuText.larkCliPath ?? '',
@@ -225,7 +248,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
         .setDestructive()
         .onClick(async () => {
           await resetConfig();
-          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '' });
+          await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '', codemRootDir: '', codemCliPath: '' });
           await setFeishuConfig({ larkCliPath: '' });
           this.config = { ...getConfig() };
           this.display();
