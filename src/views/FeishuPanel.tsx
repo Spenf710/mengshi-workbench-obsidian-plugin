@@ -38,6 +38,7 @@ import {
   type FeishuSpace,
   type FeishuNode,
   type DriveFile,
+  DRIVE_SCAN_CACHE_MS,
 } from '../data/feishuScanner';
 import { getFeishuConfig, setFeishuConfig } from '../data/settings';
 import { PROJECT_META, scanProjects } from '../data/projectScanner';
@@ -299,32 +300,42 @@ export function FeishuPanel({ app }: { app: App }) {
   }, [app]);
 
   // 深度扫描：递归所有子文件夹，收集全部文件后按项目分组
-  const doDeepScan = useCallback(async () => {
+  //   force 传 true = 全量重扫（忽略所有文件夹缓存）；false = 增量（10 分钟内缓存命中复用）
+  const doDeepScan = useCallback(async (force = false) => {
     setDeepScanning(true);
     setScanProgress({ scanned: 0, total: 0 });
 
     try {
-      // 第一步：先出项目骨架（快）
+      // 第一步：先出项目骨架（快）；保留上一次项目分组作为背景，不闪烁
       const projectList = await buildProjectSkeleton();
-      const emptyGroups: DriveProjectGroup[] = projectList.map((p) => ({
-        key: p.key, emoji: p.emoji, name: p.name, files: [],
-      }));
-      // 项目视图：仅项目，不展示「其他」
-      setProjectGroups(emptyGroups);
-      setSelectedProject(emptyGroups[0]?.key || null);
+      if (!force && projectGroups.length > 0) {
+        // 增量：保留旧的项目分组视图，扫描完成后更新（避免清空闪烁）
+      } else {
+        const emptyGroups: DriveProjectGroup[] = projectList.map((p) => ({
+          key: p.key, emoji: p.emoji, name: p.name, files: [],
+        }));
+        setProjectGroups(emptyGroups);
+        setSelectedProject(emptyGroups[0]?.key || null);
+      }
 
       // 第二步：后台扫描云盘，文件逐批填入已有项目骨架
+      // 增量模式用 10 分钟扫描缓存短路未变化的文件夹，只刷新过期文件夹；并发批加速多文件夹场景
+      const feishuCfg = getFeishuConfig();
+      const maxScanStaleMs = 10 * 60 * 1000; // 与 feishuScanner.DRIVE_SCAN_CACHE_MS 对齐
       const rootFiles = await loadDriveRoot(true);
       const scanResult = await Promise.race([
         deepScanDriveFiles(
           rootFiles,
-          (token) => loadDriveFolder(token),
+          (token) => loadDriveFolder(token, force, undefined, maxScanStaleMs),
           (scanned, total) => setScanProgress({ scanned, total }),
-          100,
+          feishuCfg.scanFolderLimit || 100,   // 文件夹上限（默认 100，可配置）
           excludedRef.current,
+          true,           // 增量
+          force,          // forceRefreshFolders
+          feishuCfg.scanConcurrency || 5,     // 并发批大小（默认 5，可配置）
         ),
         new Promise<{ files: DriveFile[]; truncated: boolean }>((_, reject) =>
-          setTimeout(() => reject(new Error('扫描超时')), 60000)
+          setTimeout(() => reject(new Error('扫描超时')), 120000)
         ),
       ]);
       setScanTruncated(scanResult.truncated);
@@ -343,14 +354,14 @@ export function FeishuPanel({ app }: { app: App }) {
       setProjectGroups([]);
     }
     setDeepScanning(false);
-  }, [buildProjectSkeleton]);
+  }, [buildProjectSkeleton, projectGroups]);
 
-  // 统一刷新：根据当前数据源智能刷新
-  const unifiedRefresh = useCallback(() => {
+  // 统一刷新：根据当前数据源智能刷新（默认增量；🔁 全量重扫按钮强制刷新）
+  const unifiedRefresh = useCallback((force = false) => {
     if (source === 'wiki') {
       initConnection();
     } else if (source === 'drive') {
-      doDeepScan();
+      doDeepScan(force);
     } else if (source === 'minutes') {
       doLoadMinutes();
     }
@@ -447,7 +458,10 @@ export function FeishuPanel({ app }: { app: App }) {
           <button className={`mswb-sort-btn ${source === 'wiki' ? 'active' : ''}`} onClick={() => switchSource('wiki')}>📚 知识库</button>
           <button className={`mswb-sort-btn ${source === 'drive' ? 'active' : ''}`} onClick={() => switchSource('drive')}>☁️ 云盘</button>
           <button className={`mswb-sort-btn ${source === 'minutes' ? 'active' : ''}`} onClick={() => { switchSource('minutes'); if (minutes.length === 0) doLoadMinutes(); }}>🎙️ 纪要</button>
-          <button className="mswb-sort-btn" onClick={unifiedRefresh} title="刷新当前数据源" style={{ marginLeft: 4 }}>🔄</button>
+          <button className="mswb-sort-btn" onClick={() => unifiedRefresh()} title="增量刷新：10 分钟内只扫描变化的文件夹" style={{ marginLeft: 4 }}>🔄 增量</button>
+          {source === 'drive' && (
+            <button className="mswb-sort-btn" onClick={() => unifiedRefresh(true)} title="全量重扫：忽略缓存，重新遍历所有云盘文件夹" style={{ marginLeft: 4 }}>♻️ 全量</button>
+          )}
         </div>
       </div>
 

@@ -215,6 +215,24 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           .onChange((v) => { feishuText.larkCliPath = v; });
       });
 
+    new Setting(containerEl)
+      .setName('扫描文件夹上限')
+      .setDesc('深度扫描最多遍历的文件夹数（默认 100；云盘嵌套很深可调大，超出部分标为已达上限）')
+      .addText((t) => {
+        t.setValue(String(feishuCfg.scanFolderLimit ?? 100))
+          .setPlaceholder('100')
+          .onChange((v) => { feishuText.scanFolderLimit = parseInt(v, 10) || 100; });
+      });
+
+    new Setting(containerEl)
+      .setName('扫描并发数')
+      .setDesc('同步文件夹时并发加载的批次大小（默认 5；文件夹多可调大到 8~10 提速，飞书接口限频时调小）')
+      .addText((t) => {
+        t.setValue(String(feishuCfg.scanConcurrency ?? 5))
+          .setPlaceholder('5')
+          .onChange((v) => { feishuText.scanConcurrency = parseInt(v, 10) || 5; });
+      });
+
     // ===== 操作按钮 =====
     containerEl.createEl('hr');
 
@@ -235,6 +253,8 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
           });
           await setFeishuConfig({
             larkCliPath: feishuText.larkCliPath ?? '',
+            scanFolderLimit: feishuText.scanFolderLimit ?? 100,
+            scanConcurrency: feishuText.scanConcurrency ?? 5,
           });
           this.config = { ...getConfig() };
           this.display();
@@ -249,7 +269,7 @@ export class WorkbenchSettingsTab extends PluginSettingTab {
         .onClick(async () => {
           await resetConfig();
           await setSessionConfig({ sessionRootDir: '', claudeCliPath: '', archiveDir: '', codemRootDir: '', codemCliPath: '' });
-          await setFeishuConfig({ larkCliPath: '' });
+          await setFeishuConfig({ larkCliPath: '', scanFolderLimit: 100, scanConcurrency: 5 });
           this.config = { ...getConfig() };
           this.display();
         }));

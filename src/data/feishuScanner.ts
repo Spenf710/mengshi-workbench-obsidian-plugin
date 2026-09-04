@@ -564,17 +564,21 @@ export interface DriveFile {
 
 const _driveCache = new Map<string, { files: DriveFile[]; time: number }>();
 const DRIVE_CACHE_MS = 120000; // 2 分钟
+/** 深度扫描模式的文件夹列表缓存时长：10 分钟内复用上次结果，增量刷新不重复打 API */
+export const DRIVE_SCAN_CACHE_MS = 10 * 60 * 1000;
 
 /** 列出云盘根目录文件（不传 folder_token） */
 export async function loadDriveRoot(forceRefresh = false): Promise<DriveFile[]> {
   return loadDriveFolder('', forceRefresh);
 }
 
-/** 列出指定云盘文件夹内容 */
-export async function loadDriveFolder(folderToken: string, forceRefresh = false, timeoutMs = 15000): Promise<DriveFile[]> {
+/** 列出指定云盘文件夹内容。
+ *  @param maxStaleMs 缓存最大时效：浏览用 2 分钟；扫描用 DRIVE_SCAN_CACHE_MS（10 分钟）实现增量刷新
+ */
+export async function loadDriveFolder(folderToken: string, forceRefresh = false, timeoutMs = 15000, maxStaleMs: number = DRIVE_CACHE_MS): Promise<DriveFile[]> {
   const cacheKey = folderToken || '__root__';
   const cached = _driveCache.get(cacheKey);
-  if (!forceRefresh && cached && (Date.now() - cached.time) < DRIVE_CACHE_MS) {
+  if (!forceRefresh && cached && (Date.now() - cached.time) < maxStaleMs) {
     return cached.files;
   }
 
@@ -587,7 +591,7 @@ export async function loadDriveFolder(folderToken: string, forceRefresh = false,
   }
 
   const result = await execLarkCli(args, timeoutMs);
-  if (!result.ok) { return []; }
+  if (!result.ok) { return cached?.files /* 请求失败时返回陈旧缓存，避免刷新打断列表 */ || []; }
 
   const files: DriveFile[] = (result.data?.files ?? []).map((f: any) => {
     // 从第一个有效 URL 自动提取飞书域名
@@ -873,19 +877,29 @@ function matchGeneric(name: string): string {
   return bestKey;
 }
 
-/** 深度遍历云盘根目录所有子文件夹，收集全部文件 */
+/** 深度遍历云盘根目录所有子文件夹，收集全部文件。
+ *  性能策略：
+ *    1. 并发加载：同一批文件夹用 Promise.all 并发调 API（execLarkCli 每次都新建 exec，无共享状态，可安全并发）
+ *    2. 增量命中：缓存 10 分钟内有效 → 直接复用结果，零 API 调用
+ *  @param incremental 增量模式：使用 drive 文件夹的 10 分钟扫描缓存，过期文件夹才逐个刷新。
+ *  @param forceRefreshFolders 强制全量重扫：忽略所有缓存，每个文件夹都调 API。
+ *  @param maxFolders 文件夹数量上限（防失控），默认 100；超过返回 truncated。
+ *  @param concurrency 并发批大小，默认 5。
+ */
 export async function deepScanDriveFiles(
   rootFiles: DriveFile[],
   loadFolderFn: (token: string) => Promise<DriveFile[]>,
   onProgress?: (scanned: number, total: number) => void,
   maxFolders = 100,
   excludedTokens?: string[],
+  incremental = true,
+  forceRefreshFolders = false,
+  concurrency = 5,
 ): Promise<{ files: DriveFile[]; truncated: boolean }> {
   const excluded = new Set(excludedTokens || []);
   const allFiles: DriveFile[] = [];
-  const queue: Array<{ file: DriveFile; depth: number }> = rootFiles
-    .filter((f) => f.type === 'folder' && !excluded.has(f.token))
-    .map((f) => ({ file: f, depth: 0 }));
+  const queue: DriveFile[] = rootFiles
+    .filter((f) => f.type === 'folder' && !excluded.has(f.token));
   // 根目录的非文件夹直接加入
   for (const f of rootFiles) {
     if (f.type !== 'folder') allFiles.push(f);
@@ -894,22 +908,45 @@ export async function deepScanDriveFiles(
   let scanned = 0;
 
   while (queue.length > 0 && scanned < maxFolders) {
-    const { file: item } = queue.shift()!;
-    scanned++;
+    // 每次取一批并发处理，避免逐级串行等待（串行 100 文件夹 ≈ 100 次 API 往返）
+    const batch = queue.splice(0, Math.max(1, concurrency));
+    scanned += batch.length;
     onProgress?.(scanned, maxFolders);
 
-    try {
-      const children = await loadFolderFn(item.token);
-      for (const child of children) {
-        if (child.type === 'folder') {
-          if (!excluded.has(child.token)) {
-            queue.push({ file: child, depth: 0 });
+    // 并发加载本批文件夹的子内容
+    const childrenBatch = await Promise.all(batch.map(async (item) => {
+      try {
+        let children: DriveFile[];
+        const cacheKey = item.token || '__root__';
+        if (incremental && !forceRefreshFolders) {
+          // 增量命中：缓存 10 分钟内有效 → 直接复用，零 API 调用
+          const cached = _driveCache.get(cacheKey);
+          if (cached && (Date.now() - cached.time) < DRIVE_SCAN_CACHE_MS) {
+            children = cached.files;
+          } else {
+            // 过期 → 刷新该文件夹（写回工作副本缓存，后续增量复用）
+            children = await loadFolderFn(item.token);
           }
+        } else {
+          children = await loadFolderFn(item.token);
+        }
+        return { token: item.token, children, error: null };
+      } catch (err) {
+        // 跳过无权限/失败的文件夹，不中断整体扫描
+        return { token: item.token, children: [], error: String(err) };
+      }
+    }));
+
+    // 汇总：文件直接收集，子文件夹入队继续
+    for (const r of childrenBatch) {
+      for (const child of r.children) {
+        if (child.type === 'folder') {
+          if (!excluded.has(child.token)) queue.push(child);
         } else {
           allFiles.push(child);
         }
       }
-    } catch { /* skip inaccessible folders */ }
+    }
   }
 
   onProgress?.(scanned, maxFolders);

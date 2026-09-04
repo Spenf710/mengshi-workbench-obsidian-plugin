@@ -20,6 +20,10 @@ export interface FeishuConfig {
   cachedMinutes?: any[];
   /** 文件归属手动覆盖：fileToken → projectKey */
   fileOverrides?: Record<string, string>;
+  /** 深度扫描文件夹上限（默认 100，超过自动截断） */
+  scanFolderLimit?: number;
+  /** 深度扫描并发批大小（默认 5，云盘多文件夹时加快速度） */
+  scanConcurrency?: number;
 }
 
 const DEFAULT_FEISHU_CONFIG: FeishuConfig = {
@@ -28,6 +32,8 @@ const DEFAULT_FEISHU_CONFIG: FeishuConfig = {
   refreshInterval: 300,
   lastSyncAt: null,
   excludedFolders: [],
+  scanFolderLimit: 100,
+  scanConcurrency: 5,
 };
 
 // ===== 类型 =====
