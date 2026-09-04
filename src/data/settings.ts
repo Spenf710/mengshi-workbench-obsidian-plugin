@@ -57,6 +57,8 @@ export interface SessionConfig {
   codemRootDir: string;
   /** codem CLI 路径（空 = 自动检测，「在 CodeM 中打开」用） */
   codemCliPath: string;
+  /** 收割技能名集合（默认 ['session-harvest']），匹配你的收割 SKILL 名；逗号分隔填多个 */
+  harvestSkillNames?: string[];
 }
 
 const DEFAULT_SESSION_CONFIG: SessionConfig = {
@@ -65,6 +67,7 @@ const DEFAULT_SESSION_CONFIG: SessionConfig = {
   archiveDir: '',
   codemRootDir: '',
   codemCliPath: '',
+  harvestSkillNames: ['session-harvest'],
 };
 
 export interface ProjectMetaOverride {
@@ -343,6 +346,20 @@ export function getCodemCliPath(): string {
   // 实测：codem 未进入 PATH，安装器固定生成 ~/.codem/bin/codem.cmd（Node 启动器）
   const candidate = path.join(os.homedir(), '.codem', 'bin', 'codem.cmd');
   return fs.existsSync(candidate) ? candidate : 'codem';
+}
+
+/** 收割技能名集合（默认 ['session-harvest']）；检测会话是否执行过收割时按此名单匹配。
+ *  兼容各自不同的命名——自己的收割 SKILL 只要把配置改成对应名字即可识别。 */
+export function getHarvestSkillNames(): string[] {
+  const names = getSessionConfig().harvestSkillNames;
+  if (Array.isArray(names) && names.length > 0) {
+    return names.map((n) => String(n).trim()).filter(Boolean);
+  }
+  return ['session-harvest'];
+}
+
+export async function setHarvestSkillNames(names: string[]): Promise<void> {
+  await setSessionConfig({ harvestSkillNames: names.map((n) => String(n).trim()).filter(Boolean) });
 }
 
 export function getSessionConfig(): SessionConfig {

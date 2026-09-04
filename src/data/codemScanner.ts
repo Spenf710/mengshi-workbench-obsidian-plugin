@@ -26,6 +26,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { extractText, extractProjectRef, type HarvestStatus, type SessionCard, type SessionDetail, type SessionRaw, type TurnBlock } from './sessionScanner';
+import { getHarvestSkillNames as getHarvestSkillNamesConfig } from './settings';
+
+/** 生效收割技能名名单：用户配置 ∪ 默认名（统一小写），CodeM 的 skill 名匹配走同一名单 */
+function resolveHarvestSkillNames(): string[] {
+  const set = new Set<string>(['session-harvest', 'session_harvest', 'sessionharvest']);
+  const configured = getHarvestSkillNamesConfig();
+  if (Array.isArray(configured)) {
+    for (const n of configured) set.add(String(n).toLowerCase().replace(/-/g, ''));
+  }
+  return [...set];
+}
 
 // ===== 扫描缓存（性能优化：增量扫描） =====
 // 与 Claude 会话缓存同策略：文件大小 + 最后修改时间未变 → 跳过重新解析
@@ -159,11 +170,11 @@ export async function parseCodemSessionFile(filePath: string): Promise<SessionRa
         } else if (t === 'tool_call') {
           toolCalls++;
         } else if (t === 'user_invocation') {
-          // 斜杠技能调用：input.kind==='skill' 且 name==='session-harvest'（本地 / 收割 与飞书侧『收割当前会话』均产生此事件）
+          // 斜杠技能调用：input.kind==='skill' 且 name 命中收割技能名单（本地 / 收割 与飞书侧『收割当前会话』均产生此事件）
           const input = obj.input;
           if (input && input.kind === 'skill' && typeof input.name === 'string') {
-            const skillName = String(input.name).toLowerCase();
-            const isHarvest = skillName.includes('session-harvest') || skillName.includes('session_harvest') || skillName.includes('收割');
+            const skillName = String(input.name).toLowerCase().replace(/-/g, '');
+            const isHarvest = resolveHarvestSkillNames().some((n) => skillName.includes(n)) || input.name.includes('收割');
             if (isHarvest) {
               sawHarvestReq = true;
               // 收割指令本身是一条用户真实发起的轮次（user_invocation 独立于 user_message）→ 计入 userTurns，卡片轮数才一致
@@ -172,9 +183,11 @@ export async function parseCodemSessionFile(filePath: string): Promise<SessionRa
             }
           }
         } else if (t === 'model_input') {
-          // 兜底：user_invocation 后的 model_input 携带 SKILL 定义正文（<command-name>session-harvest</command-name>）
+          // 兜底：user_invocation 后的 model_input 携带 SKILL 定义正文（<command-name>session-harvest</command-name> 等）
           const contentStr = typeof obj.content === 'string' ? obj.content : JSON.stringify(obj.content ?? '');
-          if (contentStr.includes('<command-name>session-harvest</command-name>')) {
+          const target = contentStr.match(/<command-name>\s*\/?\s*([^<\s]+)\s*<\/command-name>/);
+          const cmd = target ? target[1].toLowerCase().replace(/-/g, '') : '';
+          if (cmd && resolveHarvestSkillNames().some((n) => cmd.includes(n))) {
             sawHarvestReq = true;
             if (at) lastHarvestReqAt = at;
           }

@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { getSessionRootDir, getSessionArchiveDir } from './settings';
+import { getSessionRootDir, getSessionArchiveDir, getHarvestSkillNames as getHarvestSkillNamesConfig } from './settings';
 
 // ===== 扫描缓存（性能优化：增量扫描） =====
 // 记录每个 .jsonl 文件的 文件大小 + 最后修改时间 → 未变化的文件跳过重新解析
@@ -230,8 +230,20 @@ export interface SessionRaw {
 // 命中这些 skill 的会话归入"日常"抽屉：日志、周报、日报、站会等
 const DAILY_SKILLS = ['work-log-refine', 'weekly-report', 'lark-workflow-standup-report', 'lark-workflow-meeting-summary'];
 
-/** 收割 Skill 名称变体（assistant tool_use[Skill] 的 input.skill 入参） */
-const HARVEST_SKILL_NAMES = ['session-harvest', 'session_harvest', 'sessionHarvest'];
+/** 收割技能名变体兜底（不含用户配置）：默认名 + 常见变体，保持兼容 */
+const DEFAULT_HARVEST_SKILL_NAMES = ['session-harvest', 'session_harvest', 'sessionHarvest'];
+
+/** 获取生效的收割技能名名单：用户配置（settings）∪ 默认变体，统一小写。
+ *  用户自定义命名（如 my-harvest）也能匹配，默认名始终兼容。 */
+function resolveHarvestNames(): string[] {
+  const set = new Set<string>();
+  const configured = getHarvestSkillNamesConfig();
+  if (Array.isArray(configured)) {
+    for (const n of configured) set.add(String(n).toLowerCase());
+  }
+  for (const d of DEFAULT_HARVEST_SKILL_NAMES) set.add(d.toLowerCase());
+  return [...set];
+}
 
 /** 从一行内容提取 <command-name>/xxx</command-name> 或 Skill("xxx") 调用的 skill 名 */
 function extractSkillNames(content: unknown): string[] {
@@ -251,16 +263,19 @@ function extractSkillNames(content: unknown): string[] {
 
 /**
  * 判断一段 user 原文是否为收割指令（仅两种硬信号，讨论收割 ≠ 执行收割）：
- *   1. 斜杠命令注入：`<command-name>/session-harvest</command-name>`（claude 会话用户消息里出现，执行收割的硬信号）
- *   2. SKILL 定义注入：user 消息含「会话知识收割 Skill」标题 + 该 SKILL 的 Base directory（执行收割时系统才会注入 SKILL.md 正文）
- * 命中即视为该会话执行过收割。**不包含**「文本提到 session-harvest 字样」类宽松匹配——
- * 用户讨论收割逻辑/复述需求时同样会提到该词，会误判为已收割（实测：讨论收割边界的会话被误标）。
- * 真实收割几乎必然伴随以上两种注入之一（或 assistant 侧 tool_use Skill 调用），不会漏检。
+ *   1. 斜杠命令注入：`<command-name>/<收割技能名></command-name>`（claude 会话用户消息里出现，执行收割的硬信号）
+ *   2. SKILL 定义注入：user 消息含「<技能名> Skill」标题 + 该 SKILL 的 Base directory（执行收割时系统才会注入 SKILL.md 正文）
+ * 命中即视为该会话执行过收割。**不包含**「文本提到收割字样」类宽松匹配，避免讨论收割被误判。
  */
 function isHarvestInstruction(text: string): boolean {
   if (!text) return false;
+  const names = resolveHarvestNames();
   // 1. 斜杠命令：<command-name>/session-harvest</command-name> 或 <command-message>session-harvest</command-message>
-  if (/<command-(?:name|message)>\s*?\/?\s*?session[-_]harvest/i.test(text)) return true;
+  for (const name of names) {
+    if (text.toLowerCase().includes(`<command-name>${name}</command-name>`)) return true;
+    if (text.toLowerCase().includes(`<command-message>${name}</command-message>`)) return true;
+    if (text.toLowerCase().includes(`<command-name>/${name}</command-name>`)) return true;
+  }
   // 2. SKILL 定义注入：heading 含「会话知识收割 Skill」+ Base directory for this skill
   if (text.includes('会话知识收割 Skill') && text.includes('Base directory for this skill')) return true;
   return false;
@@ -347,11 +362,12 @@ export async function parseSessionFile(filePath: string): Promise<SessionRaw | n
             for (const b of content) {
               if (b?.type !== 'tool_use') continue;
               toolCalls++;
-              // 收割判定：Skill 工具且入参定位到 session-harvest（实测字段 b.input.skill，兼收 skill_name 变体）
+              // 收割判定：Skill 工具且入参定位到当前配置的收割技能名（默认 session-harvest，
+              // 可配置成自己命名的收割 SKILL；input.skill / skill_name 变体兼容）
               const sn = (b.name === 'Skill' && b.input && 'skill' in b.input && typeof (b.input as any).skill === 'string')
                 ? (b.input as any).skill
                 : (b.name === 'Skill' && b.input && typeof (b.input as any).skill_name === 'string' ? (b.input as any).skill_name : '');
-              if (sn && HARVEST_SKILL_NAMES.some((name) => sn.includes(name))) {
+              if (sn && resolveHarvestNames().some((name) => sn.toLowerCase().includes(name))) {
                 skills.push('session-harvest'); // 沿既有 skills 集合
                 sawHarvest = true;
                 if (ts) lastHarvestAt = ts;    // 取最后一次调用的时间
@@ -417,21 +433,23 @@ function parseBlocks(content: unknown): TurnBlock[] {
     return blocks;
   }
   if (Array.isArray(content)) {
-    for (const b: any of content) {
-      if (!b || typeof b !== 'object') continue;
-      const t = b.type;
-      if (t === 'text' && typeof b.text === 'string' && b.text.trim()) {
-        blocks.push({ kind: 'text', content: b.text });
-      } else if (t === 'thinking' && typeof b.thinking === 'string' && b.thinking.trim()) {
-        blocks.push({ kind: 'thinking', content: b.thinking });
+    for (const b of content) {
+      const item = b as { type?: string; text?: unknown; thinking?: unknown };
+      const t = item.type;
+      if (t === 'text' && typeof item.text === 'string' && item.text.trim()) {
+        blocks.push({ kind: 'text', content: item.text });
+      } else if (t === 'thinking' && typeof item.thinking === 'string' && item.thinking.trim()) {
+        blocks.push({ kind: 'thinking', content: item.thinking });
       } else if (t === 'tool_use') {
-        blocks.push({ kind: 'tool_use', label: b.name || '工具', content: JSON.stringify(b.input ?? {}, null, 2).slice(0, 2000) });
+        const item2 = b as { name?: string; input?: unknown };
+        blocks.push({ kind: 'tool_use', label: item2.name || '工具', content: JSON.stringify(item2.input ?? {}, null, 2).slice(0, 2000) });
       } else if (t === 'tool_result') {
         // tool_result 的 content 可能是 array[{type:text}] 或 string
         let tr = '';
-        if (typeof b.content === 'string') tr = b.content;
-        else if (Array.isArray(b.content)) {
-          tr = b.content.map((x: any) => x?.text ?? '').join('');
+        const raw = (b as { content?: unknown }).content;
+        if (typeof raw === 'string') tr = raw;
+        else if (Array.isArray(raw)) {
+          tr = raw.map((x) => (x && typeof x === 'object' && typeof (x as { text?: unknown }).text === 'string' ? (x as { text: string }).text : '')).join('');
         }
         blocks.push({ kind: 'tool_result', content: tr.slice(0, 3000) });
       }
